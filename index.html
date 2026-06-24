@@ -513,6 +513,8 @@
         let audioCtx = null;
         const SND = {
             bgMusic: null,
+            eggCrackAudio: null,
+            fireworksAudio: null,
             init() { 
                 if (!audioCtx) audioCtx = new AudioContext(); 
                 if (!this.bgMusic) {
@@ -520,6 +522,18 @@
                     this.bgMusic.loop = true;
                     this.bgMusic.volume = 0.3;
                     this.bgMusic.muted = !musicEnabled;
+                }
+                if (!this.eggCrackAudio) {
+                    this.eggCrackAudio = new Audio('egg crack.mp3');
+                    this.eggCrackAudio.preload = 'auto';
+                    this.eggCrackAudio.volume = 0.5;
+                    this.eggCrackAudio.load();
+                }
+                if (!this.fireworksAudio) {
+                    this.fireworksAudio = new Audio('fireworks sound.mp3');
+                    this.fireworksAudio.preload = 'auto';
+                    this.fireworksAudio.volume = 0.55;
+                    this.fireworksAudio.load();
                 }
                 this.resumeMusic();
             },
@@ -572,12 +586,22 @@
                     s.play().catch(e => {});
                 } catch(e) {}
             },
-            monkeyDie() {
+            monkeyDie(startAt = 0.15) {
                 if (!sfxEnabled) return;
                 try {
                     const s = new Audio('monkey sound.mp3');
                     s.volume = 0.45;
-                    s.currentTime = 0.15;
+                    s.currentTime = startAt;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            eggCrack() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = this.eggCrackAudio || new Audio('egg crack.mp3');
+                    s.pause();
+                    s.volume = 0.5;
+                    s.currentTime = 0.16;
                     s.play().catch(e => {});
                 } catch(e) {}
             },
@@ -587,6 +611,16 @@
                     const s = new Audio('burp.mp3');
                     s.volume = 0.55;
                     s.currentTime = 0.12;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            fireworks() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = this.fireworksAudio || new Audio('fireworks sound.mp3');
+                    s.pause();
+                    s.volume = 0.55;
+                    s.currentTime = 0;
                     s.play().catch(e => {});
                 } catch(e) {}
             },
@@ -913,6 +947,15 @@
             spawnParticles(bx, bulletY, isEgg ? '#fff7dc' : (en.isPig ? '#c21807' : (isBanana ? '#ffd54f' : color)), en.isBig ? 8 : 4);
         }
 
+        function spawnPinkBossBullet(en, pl) {
+            const savedDir = en.dir;
+            const playerMid = pl.x + pl.w / 2;
+            const bossMid = en.x + en.w / 2;
+            en.dir = playerMid < bossMid ? -1 : 1;
+            spawnEnemyBullet(en, '#ff0000', null, null, true);
+            en.dir = savedDir;
+        }
+
         function updateBullets(enemies, pl, moveOnlyEnemyBullets = false) {
             if (bullets.length > 100) bullets.splice(0, bullets.length - 100);
             bullets = bullets.filter(b => {
@@ -931,6 +974,7 @@
                         if (b.isEgg) {
                             pl.eggSplatTimer = 150;
                             spawnEggBreak(b.x + b.w / 2, b.y + b.h / 2);
+                            SND.eggCrack();
                         } else {
                             spawnParticles(pl.x + pl.w / 2, pl.y, '#ff4455', 8);
                         }
@@ -959,7 +1003,7 @@
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
                                 if (en.isChicken) SND.chickenDie();
-                                else if (en.isMonkey) SND.monkeyDie();
+                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.15);
                                 else if (isPinkMonster(en)) SND.monsterWhistle();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -3257,8 +3301,10 @@
                             state = 'win'; 
                             spawnParticles(pl.x + pl.w / 2, pl.y, '#ffd700', 20); 
                             SND.win(level === MAX_LEVELS);
-                            if (level === MAX_LEVELS) SND.stopMusic();
-                            else SND.pauseMusic();
+                            if (level === MAX_LEVELS) {
+                                SND.stopMusic();
+                                SND.fireworks();
+                            } else SND.pauseMusic();
                         }
                     }
                 }
@@ -3514,14 +3560,14 @@
                                             if (en.coughTimer > 0) {
                                                 en.coughTimer--;
                                                 if (en.coughTimer === 0) {
-                                                    spawnEnemyBullet(en, '#ff0000', null, null, true);
+                                                    spawnPinkBossBullet(en, pl);
                                                     en.shootCooldown = enemyShootDelay(240);
                                                 }
                                             } else {
                                                 en.coughTimer = 24;
                                             }
                                         } else {
-                                            spawnEnemyBullet(en, '#ff0000', null, null, true);
+                                            spawnPinkBossBullet(en, pl);
                                             en.shootCooldown = enemyShootDelay(240);
                                         }
                                     }
@@ -3557,7 +3603,7 @@
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
                                 if (en.isChicken) SND.chickenDie();
-                                else if (en.isMonkey) SND.monkeyDie();
+                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.15);
                                 else if (isPinkMonster(en)) SND.monsterWhistle();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -3708,7 +3754,7 @@
             // Overlay states
             if (state === 'dead') drawOverlayMsg(T('dead'), '#ff4455', T('pressSpace'));
             if (state === 'win' && level >= MAX_LEVELS) {
-                drawOverlayMsg(T('victory'), '#ffd700', T('victoryScore'), winBgImg);
+                drawOverlayMsg(T('victory'), '#ffd700', T('victoryScore'), winBgImg, true);
             } else if (state === 'win') {
                 const img = (level === 1 || level === 3) ? level2BgImg : levelBgImg;
                 drawOverlayMsg(T('win', level), '#00ffaa', T('nextLevel'), img);
@@ -3743,7 +3789,54 @@
             ctx.restore();
         }
 
-        function drawOverlayMsg(title, color, sub, bgImg = null) {
+        function drawFinalFireworks() {
+            const bursts = [
+                { x: 145, y: 105, delay: 0, color: '#ff4d6d' },
+                { x: 650, y: 95, delay: 45, color: '#57f2ff' },
+                { x: 265, y: 280, delay: 90, color: '#ffd84a' },
+                { x: 555, y: 260, delay: 130, color: '#b06cff' },
+                { x: 90, y: 235, delay: 170, color: '#7dff8a' }
+            ];
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (const fw of bursts) {
+                const cycle = 190;
+                const age = ((t + fw.delay) % cycle) / cycle;
+                const radius = age < 0.18
+                    ? 10 + age * 180
+                    : 42 + Math.sin(age * Math.PI) * 72;
+                const alpha = age < 0.18 ? age / 0.18 : Math.max(0, 1 - (age - 0.18) / 0.82);
+                ctx.globalAlpha = alpha;
+                for (let i = 0; i < 24; i++) {
+                    const a = (Math.PI * 2 * i) / 24 + Math.sin(fw.delay) * 0.2;
+                    const sparkR = radius * (0.72 + 0.28 * Math.sin(i * 1.7 + t * 0.03));
+                    const sx = fw.x + Math.cos(a) * sparkR;
+                    const sy = fw.y + Math.sin(a) * sparkR + age * 26;
+                    ctx.fillStyle = i % 3 === 0 ? '#ffffff' : fw.color;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, i % 3 === 0 ? 2.4 : 3.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = fw.color;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(fw.x + Math.cos(a) * sparkR * 0.45, fw.y + Math.sin(a) * sparkR * 0.45);
+                    ctx.lineTo(sx, sy);
+                    ctx.stroke();
+                }
+                if (age < 0.18) {
+                    ctx.globalAlpha = 0.55;
+                    ctx.strokeStyle = fw.color;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(fw.x, H - 25);
+                    ctx.lineTo(fw.x, fw.y + radius * 0.35);
+                    ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+
+        function drawOverlayMsg(title, color, sub, bgImg = null, fireworks = false) {
             ctx.save();
             if (bgImg && bgImg.complete && bgImg.naturalWidth !== 0) {
                 ctx.drawImage(bgImg, 0, 0, W, H);
@@ -3753,13 +3846,19 @@
                 ctx.fillStyle = 'rgba(0,0,0,0.85)';
                 ctx.fillRect(0, 0, W, H);
             }
-            ctx.fillStyle = color;
+            if (fireworks) drawFinalFireworks();
             ctx.font = (lang === 'he' ? '28px' : '22px') + ' "Press Start 2P"';
             ctx.textAlign = 'center';
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = 'rgba(0,0,0,0.78)';
+            ctx.strokeText(title, W / 2, H / 2 - 20);
+            ctx.fillStyle = color;
             ctx.fillText(title, W / 2, H / 2 - 20);
             ctx.font = (lang === 'he' ? '28px' : '22px') + ' "Press Start 2P"';
-            ctx.fillStyle = '#ccc';
             ctx.font = (lang === 'he' ? '15px' : '10px') + ' "Press Start 2P"';
+            ctx.lineWidth = 4;
+            ctx.strokeText(sub, W / 2, H / 2 + 18);
+            ctx.fillStyle = '#ccc';
             ctx.fillText(sub, W / 2, H / 2 + 18);
             ctx.restore();
         }
@@ -3775,6 +3874,7 @@
                 }
                 ctx.clearRect(0, 0, W, H);
                 if (!paused) update();
+                if (state === 'win') t++;
                 draw();
                 if (paused) {
                     drawOverlayMsg(T('paused'), '#ffffff', T('unpause'), false);
