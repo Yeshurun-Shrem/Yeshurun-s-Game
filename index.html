@@ -330,10 +330,12 @@
         const isEasyMode = () => currentDifficulty === 'easy';
         const easyThirdLess = (value) => isEasyMode() ? Math.max(1, Math.ceil(value * 2 / 3)) : value;
         const enemySpeed = (value) => isEasyMode() ? value * 3 / 4 : value;
+        const hippoSpeed = (value) => isEasyMode() ? value * 0.82 : value;
         const enemyShootDelay = (frames) => isEasyMode() ? Math.ceil(frames * 1.5) : frames;
         const easyFlyingY = () => rand(H - 240, H - 210) | 0;
         function levelItemRequirement(lvl, totalItemsRaw) {
-            const base = (lvl === 1) ? 20 : (lvl === 2) ? 25 : (lvl === 3) ? 25 : (lvl === 4) ? 30 : (lvl === 5) ? 35 : (lvl === 6) ? 50 : (lvl === 7) ? 40 : Math.ceil(totalItemsRaw * 0.6);
+            const base = (lvl === 1) ? 20 : (lvl === 2) ? 29 : (lvl === 3) ? 27 : (lvl === 4) ? 27 : (lvl === 5) ? 27 : (lvl === 6) ? 50 : (lvl === 7) ? 40 : Math.ceil(totalItemsRaw * 0.6);
+            if (lvl >= 3 && lvl <= 5) return base;
             return easyThirdLess(base);
         }
         function applyDifficultyToEnemies(enemies) {
@@ -356,7 +358,7 @@
                         en.maxHp += en.easyBonusHp;
                         en.hp += en.easyBonusHp;
                     }
-                    if (en.isPerson && !en.isBig) {
+                    if (en.isMonkey && !en.isBig) {
                         en.maxHp = 1;
                         en.hp = 1;
                     }
@@ -382,7 +384,7 @@
                 bossAppeared: 'Boss appeared!',
                 collectGun: 'Collect the gun to advance',
                 gunHint: 'Press SPACE to use the gun',
-                itemsLeft: (n) => `${n} diamonds to meet the ${level === MAX_LEVELS ? 'bosses' : 'boss'}`,
+                itemsLeft: (n) => `${n} coins to meet the ${level === MAX_LEVELS ? 'bosses' : 'boss'}`,
                 hippoHint: 'The hippo cannot be killed - run!',
                 killBoss: 'Defeat the boss to continue',
                 killBossFinal: 'Defeat the bosses to win',
@@ -552,6 +554,42 @@
             coin() { this.osc(1200, 0.2, 'sine', 0.08, 1400); },
             heart() { this.osc(600, 0.4, 'sine', 0.12, 750); },
             hit() { this.osc(120, 0.2, 'triangle', 0.15, 60); },
+            chickenDie() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('chicken sound.mp3');
+                    s.volume = 0.45;
+                    s.currentTime = 0.15;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            monsterWhistle() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('monster whistle.mp3');
+                    s.volume = 0.45;
+                    s.currentTime = 0.15;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            monkeyDie() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('monkey sound.mp3');
+                    s.volume = 0.45;
+                    s.currentTime = 0.15;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            burp() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('burp.mp3');
+                    s.volume = 0.55;
+                    s.currentTime = 0.12;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
             win(isFinal) {
                 const notes = isFinal 
                     ? [261, 329, 392, 523, 329, 392, 523, 659, 392, 523, 659, 783, 523, 659, 783, 1046, 1318]
@@ -605,6 +643,7 @@
 
         // ─── Input ────────────────────────────────────────────────────────────────────
         const keys = {};
+        let suppressSpaceShootUntilKeyup = false;
         document.addEventListener('keydown', e => {
             keys[e.code] = true;
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -638,12 +677,16 @@
                 }
             }
         });
-        document.addEventListener('keyup', e => { keys[e.code] = false; });
+        document.addEventListener('keyup', e => {
+            keys[e.code] = false;
+            if (e.code === 'Space') suppressSpaceShootUntilKeyup = false;
+        });
 
         // ─── Helpers ──────────────────────────────────────────────────────────────────
         const lerp = (a, b, t) => a + (b - a) * t;
         const rand = (a, b) => Math.random() * (b - a) + a;
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const isPinkMonster = (en) => !en.isMonkey && !en.isBat && !en.isPig && !en.isChicken && !en.isHippo;
 
         // ─── Color palette ────────────────────────────────────────────────────────────
         let PAL = {};
@@ -693,7 +736,7 @@
         ];
         const COMMON_PAL = {
             playerBody: '#ffd700', playerSword: '#c0e0ff',
-            coin: '#ffe066', gem: '#00eeff', door: '#ffd700', particle: '#ffd700'
+            coin: '#ffe066', door: '#ffd700', particle: '#ffd700'
         };
         function setLevelPalette(lvl) {
             PAL = { ...COMMON_PAL, ...LEVEL_PALETTES[Math.min(lvl - 1, LEVEL_PALETTES.length - 1)] };
@@ -712,10 +755,52 @@
                 });
             }
         }
+        function spawnFeathers(x, y) {
+            for (let i = 0; i < 34; i++) {
+                const a = rand(-Math.PI * 0.95, Math.PI * 0.05);
+                const spd = rand(1.4, 5.2);
+                particles.push({
+                    x, y,
+                    vx: Math.cos(a) * spd,
+                    vy: Math.sin(a) * spd - rand(0.4, 1.4),
+                    life: 1,
+                    color: Math.random() < 0.65 ? '#fff8df' : '#f1d28a',
+                    size: rand(5, 9),
+                    type: 'feather',
+                    rot: rand(0, Math.PI * 2),
+                    spin: rand(-0.22, 0.22)
+                });
+            }
+        }
+        function spawnMonsterOops(en) {
+            const x = en.x + en.w / 2, y = en.y + en.h / 2;
+            spawnParticles(x, y, '#ff88aa', 16);
+            spawnParticles(x, y, '#ffccdd', 10);
+        }
+        function spawnEggBreak(x, y) {
+            for (let i = 0; i < 14; i++) {
+                const a = rand(0, Math.PI * 2);
+                const spd = rand(1.2, 4.2);
+                particles.push({
+                    x, y,
+                    vx: Math.cos(a) * spd,
+                    vy: Math.sin(a) * spd - rand(0.3, 1.0),
+                    life: 1,
+                    color: Math.random() < 0.75 ? '#fff7dc' : '#d8b978',
+                    size: rand(3, 6),
+                    type: 'eggShell',
+                    rot: rand(0, Math.PI * 2),
+                    spin: rand(-0.25, 0.25)
+                });
+            }
+        }
         function updateParticles() {
             if (particles.length > 150) particles.splice(0, particles.length - 150);
             particles = particles.filter(p => {
-                p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= 0.035;
+                p.x += p.vx; p.y += p.vy;
+                p.vy += p.type === 'eggYolk' ? 0.18 : ((p.type === 'feather' || p.type === 'eggShell') ? 0.055 : 0.1);
+                if (p.type === 'feather' || p.type === 'eggShell') p.rot += p.spin || 0;
+                p.life -= p.type === 'feather' ? 0.024 : (p.type === 'eggYolk' ? 0.03 : 0.035);
                 return p.life > 0;
             });
         }
@@ -724,9 +809,43 @@
             particles.forEach(p => {
                 ctx.globalAlpha = Math.max(0, p.life);
                 ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.arc(p.x - cam, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
+                if (p.type === 'feather') {
+                    ctx.save();
+                    ctx.translate(p.x - cam, p.y);
+                    ctx.rotate(p.rot || 0);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, p.size * 0.35, p.size, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(180,150,95,0.55)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -p.size * 0.8);
+                    ctx.lineTo(0, p.size * 0.8);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (p.type === 'eggShell') {
+                    ctx.save();
+                    ctx.translate(p.x - cam, p.y);
+                    ctx.rotate(p.rot || 0);
+                    ctx.beginPath();
+                    ctx.moveTo(-p.size * 0.6, -p.size * 0.4);
+                    ctx.lineTo(p.size * 0.65, -p.size * 0.15);
+                    ctx.lineTo(p.size * 0.15, p.size * 0.55);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(130,95,45,0.45)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (p.type === 'eggYolk') {
+                    ctx.beginPath();
+                    ctx.ellipse(p.x - cam, p.y, p.size * 0.85, p.size * 1.15, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(p.x - cam, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             });
             ctx.restore();
         }
@@ -762,7 +881,7 @@
         // ─── Bullets & Guns ───────────────────────────────────────────────────────────
         let bullets = [];
         function spawnEnemyBullet(en, color = '#ffaa44', targetX = null, targetY = null, round = false) {
-            const bulletOffset = en.isPig ? en.h * 0.85 : (en.isBig ? en.h * 0.65 : (en.isPerson ? en.h * 0.3 : 16));
+            const bulletOffset = en.isPig ? en.h * 0.85 : (en.isBig ? en.h * 0.65 : (en.isMonkey ? en.h * 0.3 : 16));
             const bulletY = en.y + bulletOffset;
             const bx = en.isPig ? en.x + en.w / 2 - 4 : en.x + (en.dir > 0 ? en.w : -8);
             let bvx = en.dir * (en.isBig ? 6 : 4);
@@ -778,26 +897,30 @@
                 bvy = Math.sin(angle) * speed;
             }
 
-            const isBanana = en.isPerson;
+            const isBanana = en.isMonkey;
+            const isEgg = en.isChicken && en.shootsEggs;
             bullets.push({
                 x: bx, y: bulletY, vx: bvx, vy: bvy,
-                w: en.isPig ? (en.isBig ? 14 : 10) : (isBanana ? (en.isBig ? 18 : 12) : (en.isBig ? 12 : 8)),
-                h: en.isPig ? (en.isBig ? 16 : 12) : (isBanana ? (en.isBig ? 10 : 7) : (en.isBig ? 6 : 4)),
+                w: isEgg ? 12 : (en.isPig ? (en.isBig ? 14 : 10) : (isBanana ? (en.isBig ? 18 : 12) : (en.isBig ? 12 : 8))),
+                h: isEgg ? 16 : (en.isPig ? (en.isBig ? 16 : 12) : (isBanana ? (en.isBig ? 10 : 7) : (en.isBig ? 6 : 4))),
                 life: en.isBig ? 150 : 120, fromEnemy: true, 
-                color: en.isPig ? '#c21807' : (isBanana ? '#ffee58' : color), 
+                color: isEgg ? '#fff7dc' : (en.isPig ? '#c21807' : (isBanana ? '#ffee58' : color)), 
                 round: round,
                 isBanana: isBanana,
-                isKetchup: en.isPig
+                isKetchup: en.isPig,
+                isEgg: isEgg
             });
-            spawnParticles(bx, bulletY, en.isPig ? '#c21807' : (isBanana ? '#ffd54f' : color), en.isBig ? 8 : 4);
+            spawnParticles(bx, bulletY, isEgg ? '#fff7dc' : (en.isPig ? '#c21807' : (isBanana ? '#ffd54f' : color)), en.isBig ? 8 : 4);
         }
 
-        function updateBullets(enemies, pl) {
+        function updateBullets(enemies, pl, moveOnlyEnemyBullets = false) {
             if (bullets.length > 100) bullets.splice(0, bullets.length - 100);
             bullets = bullets.filter(b => {
                 b.x += b.vx;
                 b.y += (b.vy || 0);
                 b.life--;
+
+                if (moveOnlyEnemyBullets) return b.life > 0;
 
                 if (b.fromEnemy) {
                     const pRect = { x: pl.x, y: pl.y, w: pl.w, h: pl.h };
@@ -805,7 +928,12 @@
                     if (isOverlap(b, pRect) && pl.invincible === 0) {
                         pl.hp--;
                         pl.invincible = 40;
-                        spawnParticles(pl.x + pl.w / 2, pl.y, '#ff4455', 8);
+                        if (b.isEgg) {
+                            pl.eggSplatTimer = 150;
+                            spawnEggBreak(b.x + b.w / 2, b.y + b.h / 2);
+                        } else {
+                            spawnParticles(pl.x + pl.w / 2, pl.y, '#ff4455', 8);
+                        }
                         if (pl.hp <= 0) { pl.dead = true; state = 'dead'; }
                         return false;
                     }
@@ -827,8 +955,14 @@
                             if (en.hp <= 0) {
                                 en.dead = true;
                                 enemiesKilled++;
-                                spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
-                                if (en.isBig) SND.bossDie(); else SND.kill();
+                                if (en.isChicken) spawnFeathers(en.x + en.w / 2, en.y + en.h / 2);
+                                else if (isPinkMonster(en)) spawnMonsterOops(en);
+                                else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
+                                if (en.isChicken) SND.chickenDie();
+                                else if (en.isMonkey) SND.monkeyDie();
+                                else if (isPinkMonster(en)) SND.monsterWhistle();
+                                else if (en.isBig) SND.bossDie();
+                                else SND.kill();
                             } else { SND.hit(); }
                             hitEnemy = true;
                             break;
@@ -865,6 +999,22 @@
                     ctx.fillStyle = '#ffe082';
                     ctx.fillRect(b.w / 3, -1, 3, 2);
                     
+                    ctx.restore();
+                } else if (b.isEgg) {
+                    ctx.save();
+                    ctx.translate(b.x - cam + b.w / 2, b.y + b.h / 2);
+                    ctx.rotate(Math.atan2(b.vy || 0, b.vx) + Math.PI / 2);
+                    ctx.fillStyle = '#fff7dc';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, b.w * 0.42, b.h * 0.48, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                    ctx.beginPath();
+                    ctx.arc(-b.w * 0.12, -b.h * 0.18, Math.max(2, b.w * 0.16), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#d8b978';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
                     ctx.restore();
                 } else if (b.isKetchup) {
                     ctx.save();
@@ -919,16 +1069,32 @@
 
         function drawGunItem(g, cam, t) {
             if (g.collected) return;
-            const x = g.x - cam, y = g.y + Math.sin(t * 0.05) * 3;
+            const x = g.x - cam, y = g.y + (g.burped ? 0 : Math.sin(t * 0.05) * 3);
             ctx.save();
 
-            // Golden Ring Highlight
-            ctx.beginPath();
-            ctx.strokeStyle = '#ffd700';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([4, 2]);
-            ctx.arc(x + 10, y + 5, 22 + Math.sin(t * 0.1) * 3, 0, Math.PI * 2);
-            ctx.stroke();
+            if (g.burped) {
+                ctx.fillStyle = '#1c1c1c';
+                ctx.fillRect(x, y + 9, 36, 5);
+                ctx.fillRect(x + 5, y + 6, 15, 4);
+                ctx.fillRect(x + 9, y + 14, 5, 9);
+                ctx.fillRect(x - 7, y + 8, 9, 7);
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x + 2, y + 10, 30, 1);
+                ctx.fillStyle = '#050505';
+                ctx.fillRect(x + 36, y + 9, 3, 5);
+                ctx.restore();
+                return;
+            }
+
+            if (!g.burped) {
+                // Golden Ring Highlight
+                ctx.beginPath();
+                ctx.strokeStyle = '#ffd700';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 2]);
+                ctx.arc(x + 10, y + 5, 22 + Math.sin(t * 0.1) * 3, 0, Math.PI * 2);
+                ctx.stroke();
+            }
 
             ctx.fillStyle = '#444';
             ctx.fillRect(x, y, 16, 6);
@@ -940,6 +1106,78 @@
         }
 
         // ─── Camera ───────────────────────────────────────────────────────────────────
+        function updateBurpedGuns(guns, platforms) {
+            if (!guns) return;
+            for (const g of guns) {
+                if (!g.burped || g.collected) continue;
+                const gunW = g.w || 39;
+                const gunH = g.h || 19;
+                const contactH = g.contactH || gunH;
+                const prevBottom = g.y + contactH;
+                g.onFloor = false;
+                g.x += g.vx || 0;
+                g.y += g.vy || 0;
+                g.vy = Math.min((g.vy || 0) + 0.35, 9);
+                for (const p of platforms) {
+                    const overlapsX = g.x + gunW > p.x && g.x < p.x + p.w;
+                    const crossesTop = prevBottom <= p.y && g.y + contactH >= p.y;
+                    if (overlapsX && crossesTop && (g.vy || 0) >= 0) {
+                        g.y = p.y - contactH;
+                        g.vy *= -0.28;
+                        g.vx *= 0.82;
+                        if (Math.abs(g.vy) < 0.55) {
+                            g.vy = 0;
+                            g.onFloor = true;
+                            g.floorTimer = (g.floorTimer || 0) + 1;
+                        } else {
+                            g.floorTimer = 0;
+                        }
+                        break;
+                    }
+                }
+                if (!g.onFloor) g.floorTimer = 0;
+                if (g.y > H + 80) g.fellOut = true;
+            }
+        }
+
+        function spawnBurpedGun(en) {
+            if (!ld.guns) ld.guns = [];
+            const dir = en.dir || 1;
+            const mouthX = en.x + en.w * 0.84;
+            const mouthY = en.y + en.h * 0.56;
+            ld.guns.push({
+                x: mouthX,
+                y: mouthY,
+                vx: dir * 4.2,
+                vy: -5.4,
+                w: 39,
+                h: 23,
+                contactH: 14,
+                collected: false,
+                burped: true
+            });
+            spawnParticles(mouthX, mouthY, '#d6f5a8', 18);
+            spawnFloatingText(mouthX, mouthY - 24, 'BURP!', '#d6f5a8', 45);
+            en.burpMouthTimer = 24;
+            SND.burp();
+        }
+
+        function settleHippoOnGround(en, groundY) {
+            if (!en || !en.isHippo) return;
+            if (!en.onGround) {
+                en.vy = Math.min((en.vy || 0) + 0.7, 16);
+                en.y += en.vy;
+                if (en.y >= groundY - en.h) {
+                    en.y = groundY - en.h;
+                    en.vy = 0;
+                    en.onGround = true;
+                }
+            } else {
+                en.y = groundY - en.h;
+            }
+            en.walkAnim = (en.walkAnim || 0) + (en.onGround ? 0.22 : 0.1);
+        }
+
         let cam = 0;
         function updateCam(player, worldW) {
             const target = player.x - W / 2;
@@ -962,9 +1200,11 @@
             const groundY = H - 40;
             const baseMinPit = 55; // Ensure player (22px) can easily fall through
             const baseMaxPit = lvl === 1 ? 90 : (lvl === 2 ? 115 : 140); // 90px for Level 1, 115px for Level 2, 140px for later levels.
-            const maxPit = isEasyMode() ? Math.floor(baseMaxPit / 2) : baseMaxPit;
+            const maxPit = isEasyMode()
+                ? (lvl === 6 ? Math.floor(baseMaxPit * 0.65) : Math.floor(baseMaxPit / 2))
+                : baseMaxPit;
             const minPit = isEasyMode() ? Math.min(baseMinPit, maxPit) : baseMinPit;
-            const easyPlatformY = 260;
+            const easyPlatformY = 321;
 
             // Starting platform (safe zone)
             const startPlatformW = lvl === 7 ? 720 : 300;
@@ -995,7 +1235,9 @@
                     // General case step
                     const pitW = rand(minPit, maxPit) | 0;
                     const nextX = gx + pitW;
-                    const gw = isEasyMode() ? (rand(240, 520) | 0) : (rand(120, 260) | 0);
+                    const gw = isEasyMode()
+                        ? (lvl === 4 ? (rand(170, 260) | 0) : (rand(240, 520) | 0))
+                        : (rand(120, 260) | 0);
                     
                     platforms.push({ x: nextX, y: groundY, w: gw, h: 40, type: 'sand' });
                     gx = nextX + gw;
@@ -1018,6 +1260,55 @@
                     if (!hasGround) return true;
                 }
                 return false;
+            };
+            const hasSafeGroundBelow = (candidate, edgePadding = 70) => {
+                const startX = candidate.x - edgePadding;
+                const endX = candidate.x + candidate.w + edgePadding;
+                for (let xCoord = startX; xCoord <= endX; xCoord += 6) {
+                    const hasGround = platforms.some(p =>
+                        p.y === groundY &&
+                        xCoord >= p.x &&
+                        xCoord <= p.x + p.w
+                    );
+                    if (!hasGround) return false;
+                }
+                return true;
+            };
+            const overlapsEasyPlatform = (candidate, margin = 24) => {
+                if (!isEasyMode()) return false;
+                return platforms.some(p =>
+                    p.y !== groundY &&
+                    candidate.x < p.x + p.w + margin &&
+                    candidate.x + candidate.w + margin > p.x &&
+                    candidate.y < p.y + p.h + margin &&
+                    candidate.y + candidate.h + margin > p.y
+                );
+            };
+            const signClearanceForLevel = (levelNumber) => {
+                if (levelNumber === 1) return { x: 360, y: H - 40 - (52 + 36), w: 118, h: 52 };
+                if (levelNumber === 2) return { x: 330, y: H - 40 - (70 + 36), w: 175, h: 70 };
+                if (levelNumber === 3) return { x: 325, y: H - 40 - (70 + 36), w: 185, h: 70 };
+                if (levelNumber === 4) return { x: 330, y: H - 40 - (70 + 36), w: 175, h: 70 };
+                if (levelNumber === 5) return { x: 320, y: H - 40 - (70 + 36), w: 205, h: 70 };
+                if (levelNumber === 6) return { x: 315, y: H - 40 - (70 + 36), w: 215, h: 70 };
+                return null;
+            };
+            const overlapsLevelSign = (candidate, padding = 18) => {
+                const sign = signClearanceForLevel(lvl);
+                if (!sign) return false;
+                return candidate.x < sign.x + sign.w + padding &&
+                    candidate.x + candidate.w + padding > sign.x &&
+                    candidate.y < sign.y + sign.h + padding &&
+                    candidate.y + candidate.h + padding > sign.y;
+            };
+            const makeCoinAwayFromSign = (minX, maxX, minY, maxY) => {
+                for (let tries = 0; tries < 24; tries++) {
+                    const coin = { x: rand(minX, maxX) | 0, y: rand(minY, maxY) | 0, collected: false };
+                    if (!overlapsLevelSign({ x: coin.x - 12, y: coin.y - 12, w: 24, h: 24 }, 10)) return coin;
+                }
+                const sign = signClearanceForLevel(lvl);
+                const fallbackX = sign ? Math.min(maxX, sign.x + sign.w + 70) : rand(minX, maxX);
+                return { x: fallbackX | 0, y: rand(minY, maxY) | 0, collected: false };
             };
 
             // Floating platforms (Generated sequentially with at least 35px gap to prevent stacking, and mathematically distributing >=40% low & >=40% high)
@@ -1111,6 +1402,9 @@
                         gone: false
                     }));
                 }
+                if (isEasyMode() && !hasSafeGroundBelow(newP)) continue;
+                if (overlapsEasyPlatform(newP)) continue;
+                if (overlapsLevelSign(newP)) continue;
                 platforms.push(newP);
             }
 
@@ -1119,7 +1413,11 @@
                     { x: worldW - 720, y: isEasyMode() ? easyPlatformY : 285, w: 130 },
                     { x: worldW - 540, y: isEasyMode() ? easyPlatformY : 235, w: 120 },
                     { x: worldW - 360, y: isEasyMode() ? easyPlatformY : 285, w: 140 }
-                ].forEach(p => platforms.push({ ...p, h: 14, type: 'sand' }));
+                ].forEach(p => {
+                    const newP = { ...p, h: 14, type: 'sand' };
+                    if (isEasyMode() && !hasSafeGroundBelow(newP)) return;
+                    if (!overlapsEasyPlatform(newP)) platforms.push(newP);
+                });
             }
 
             // Moving platforms (Strict grid heights)
@@ -1136,10 +1434,14 @@
                     py = Math.random() < 0.5 ? 210 : 285; // 150px or 75px above ground
                 }
                 
-                platforms.push({
+                const newP = {
                     x: px, y: py, w: 90, h: 14, type: 'stone',
                     moving: true, mx0: px, mx1: px + rand(80, 150) | 0, mspd: rand(0.6, 1.2) * (Math.random() < 0.5 ? 1 : -1)
-                });
+                };
+                const motionBounds = { x: Math.min(newP.mx0, newP.mx1), y: newP.y, w: Math.abs(newP.mx1 - newP.mx0) + newP.w, h: newP.h };
+                if (isEasyMode() && !hasSafeGroundBelow(newP)) continue;
+                if (overlapsLevelSign(motionBounds)) continue;
+                if (!overlapsEasyPlatform(newP)) platforms.push(newP);
             }
 
             // Spikes removed from the game
@@ -1147,23 +1449,18 @@
 
             // Coins
             let coinsArr = [];
-            const coinCount = lvl === 7 ? 35 : (14 + lvl * 4) - (lvl === 4 ? 9 : 0);
+            const baseCoinCount = lvl === 7 ? 35 : (14 + lvl * 4) - (lvl === 4 ? 9 : 0) - (lvl === 1 ? 4 : 0);
+            const bonusCoinBaseCount = lvl === 7 ? 15 : (3 + lvl * 2) + (lvl === 4 ? 3 : 0);
+            const bonusCoinCount = isEasyMode() && lvl === 4
+                ? Math.max(0, bonusCoinBaseCount - 4)
+                : (isEasyMode() && lvl === 5 ? Math.max(0, bonusCoinBaseCount - 16)
+                    : (isEasyMode() && lvl === 6 ? Math.max(0, bonusCoinBaseCount - 25)
+                        : (isEasyMode() && lvl === 7 ? Math.max(0, bonusCoinBaseCount - 15) : bonusCoinBaseCount)));
+            const coinCount = baseCoinCount + bonusCoinCount;
             const itemStartX = lvl === 7 ? 650 : 200;
-            const gemStartX = lvl === 7 ? 700 : 300;
+            const itemTopY = isEasyMode() && lvl <= 6 ? H - 200 : H - 300;
             for (let i = 0; i < coinCount; i++) {
-                coinsArr.push({ x: rand(itemStartX, worldW - 200) | 0, y: rand(H - 300, H - 80) | 0, collected: false });
-            }
-
-            // Gems (worth more)
-            let gems = [];
-            const baseGemCount = lvl === 7 ? 15 : (3 + lvl * 2) + (lvl === 4 ? 3 : 0);
-            const gemCount = isEasyMode() && lvl === 4
-                ? Math.max(0, baseGemCount - 4)
-                : (isEasyMode() && lvl === 5 ? Math.max(0, baseGemCount - 16)
-                    : (isEasyMode() && lvl === 6 ? Math.max(0, baseGemCount - 25)
-                        : (isEasyMode() && lvl === 7 ? Math.max(0, baseGemCount - 15) : baseGemCount)));
-            for (let i = 0; i < gemCount; i++) {
-                gems.push({ x: rand(gemStartX, worldW - 300) | 0, y: rand(H - 280, H - 120) | 0, collected: false, bob: rand(0, Math.PI * 2) });
+                coinsArr.push(makeCoinAwayFromSign(itemStartX, worldW - 200, itemTopY, H - 80));
             }
 
             // Hearts (restore life)
@@ -1176,44 +1473,77 @@
             // Enemies
             let enemies = [];
             if (lvl < 4) {
-                const numEnemy = 3 + lvl * 2;
-                for (let i = 0; i < numEnemy; i++) {
-                    const ex = rand(400, worldW - 400) | 0;
-                    enemies.push({
-                        x: ex, y: groundY - 32 - 3, w: 28, h: 32,
-                        vx: (Math.random() < 0.5 ? 1 : -1) * (0.7 + lvl * 0.2),
-                        vy: 0, onGround: false,
-                        hp: 2, maxHp: 2,
-                        stunTimer: 0, dead: false,
-                        patrolX0: ex - 80, patrolX1: ex + 80,
-                        dir: 1, walkAnim: 0
-                    });
+                if (lvl !== 2) {
+                    const numEnemy = 3 + lvl * 2;
+                    for (let i = 0; i < numEnemy; i++) {
+                        const ex = rand(400, worldW - 400) | 0;
+                        enemies.push({
+                            x: ex, y: groundY - 32 - 3, w: 28, h: 32,
+                            vx: (Math.random() < 0.5 ? 1 : -1) * (0.7 + lvl * 0.2),
+                            vy: 0, onGround: false,
+                            hp: 2, maxHp: 2,
+                            stunTimer: 0, dead: false,
+                            patrolX0: ex - 80, patrolX1: ex + 80,
+                            dir: 1, walkAnim: 0
+                        });
+                    }
+                } else {
+                    const chickenRuns = platforms.filter(p => p.y === groundY && p.w > 180 && p.x > 320 && p.x < worldW - 700);
+                    const chickenCount = chickenRuns.length > 0 ? 12 : 0;
+                    for (let i = 0; i < chickenCount; i++) {
+                        const runIndex = i % chickenRuns.length;
+                        const p = chickenRuns[runIndex];
+                        const slotsOnRun = Math.ceil((chickenCount - runIndex) / chickenRuns.length);
+                        const slotIndex = Math.floor(i / chickenRuns.length);
+                        const usableW = Math.max(40, p.w - 64);
+                        const ex = clamp(p.x + 32 + usableW * ((slotIndex + 1) / (slotsOnRun + 1)), p.x + 20, p.x + p.w - 44) | 0;
+                        enemies.push({
+                            x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                            vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
+                            vy: 0, onGround: false,
+                            isChicken: true,
+                            hp: 1, maxHp: 1, oneShot: true,
+                            keepInEasy: true,
+                            stunTimer: 0, dead: false,
+                            patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
+                            dir: 1, walkAnim: rand(0, Math.PI * 2)
+                        });
+                    }
                 }
             } else if (lvl === 4) {
-                // Ground people
-                for (let i = 0; i < 3; i++) {
-                    const ex = rand(600, worldW - 400) | 0;
+                // Ground monkeys
+                const groundMonkeyCount = isEasyMode() ? 6 : 3;
+                const monkeyGroundRuns = platforms.filter(p => p.y === groundY && p.w > 160 && p.x > 420 && p.x < worldW - 650);
+                const actualGroundMonkeyCount = monkeyGroundRuns.length ? Math.min(groundMonkeyCount, monkeyGroundRuns.length) : groundMonkeyCount;
+                for (let i = 0; i < actualGroundMonkeyCount; i++) {
+                    const run = monkeyGroundRuns.length ? monkeyGroundRuns[i] : null;
+                    const ex = run
+                        ? clamp(run.x + rand(30, Math.max(35, run.w - 52)), run.x + 12, run.x + run.w - 34) | 0
+                        : rand(600, worldW - 400) | 0;
                     enemies.push({
                         x: ex, y: groundY - 36, w: 22, h: 51,
                         vx: (Math.random() < 0.5 ? 1 : -1) * 1.2,
                         vy: 0, onGround: false,
-                        isPerson: true,
+                        isMonkey: true,
                         shootCooldown: rand(60, 240) | 0,
                         hp: 4, maxHp: 4,
+                        keepInEasy: true,
                         stunTimer: 0, dead: false,
-                        patrolX0: ex - 200, patrolX1: ex + 200,
+                        patrolX0: run ? run.x + 10 : ex - 200,
+                        patrolX1: run ? run.x + run.w - 32 : ex + 200,
                         dir: 1, walkAnim: 0
                     });
                 }
-                // Platform people
+                // Platform monkeys
                 for (const p of platforms) {
+                    if (isEasyMode()) continue;
                     if (p.w > 60 && Math.random() < 0.15) {
                         const ex = p.x + p.w / 2 - 11;
                         enemies.push({
                             x: ex, y: p.y - 36, w: 22, h: 51,
                             vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
                             vy: 0, onGround: false,
-                            isPerson: true,
+                            isMonkey: true,
                             shootCooldown: rand(60, 240) | 0,
                             hp: 4, maxHp: 4,
                             stunTimer: 0, dead: false,
@@ -1240,7 +1570,8 @@
                     x: doorX - 80, y: groundY - 64 - 3, w: 56, h: 64,
                     vx: -1.2, vy: 0, onGround: false,
                     hp: 12, maxHp: 12, stompDropsHp: 4, isBig: true, hoverAboveGround: true,
-                    stunTimer: 0, dead: false,
+                    stunTimer: 0, dead: false, coughBoss: true, coughTimer: 0,
+                    enemyColor1: '#ff4455', enemyColor2: '#cc2233', enemyHeadColor: '#ff6677',
                     patrolX0: doorX - 700, patrolX1: doorX - 20,
                     dir: 1, walkAnim: 0,
                     waitingForItems: true
@@ -1248,11 +1579,11 @@
             }
 
             if (lvl === 4) {
-                // Boss Person for Level 4
+                // Boss Monkey for Level 4
                 enemies.push({
                     x: doorX - 100, y: groundY - 72, w: 44, h: 72,
                     vx: 1.5, vy: 0, onGround: false,
-                    isPerson: true, isBig: true,
+                    isMonkey: true, isBig: true,
                     shootCooldown: 180,
                     hp: 30, maxHp: 30,
                     stunTimer: 0, dead: false,
@@ -1265,26 +1596,13 @@
             }
 
             if (lvl === 2) {
-                for (let i = 0; i < 4; i++) {
-                    const ex = rand(300, worldW - 300) | 0;
-                    const ey = isEasyMode() ? easyFlyingY() : (rand(H - 350, H - 200) | 0);
-                    enemies.push({
-                        x: ex, y: ey, baseY: ey, w: 24, h: 20,
-                        vx: (Math.random() < 0.5 ? 1 : -1) * 1.5,
-                        vy: 0, onGround: false, isBat: true,
-                        hp: 1, maxHp: 1,
-                        stunTimer: 0, dead: false,
-                        patrolX0: ex - 150, patrolX1: ex + 150,
-                        dir: 1, walkAnim: rand(0, Math.PI * 2)
-                    });
-                }
-
                 enemies.push({
-                    x: doorX - 100, y: groundY - 60, baseY: groundY - 60, w: 48, h: 40,
-                    vx: -1.5, vy: 0, onGround: false, isBat: true, isBig: true,
+                    x: doorX - 120, y: groundY - 62, w: 58, h: 62,
+                    vx: -1.2, vy: 0, onGround: false, isChicken: true, isBig: true,
+                    shootsEggs: true, shootCooldown: 120,
                     hp: 24, maxHp: 24, stompDropsHp: 4,
                     stunTimer: 0, dead: false,
-                    patrolX0: doorX - 180, patrolX1: doorX - 20,
+                    patrolX0: doorX - 360, patrolX1: doorX - 40,
                     dir: 1, walkAnim: 0,
                     waitingForItems: true
                 });
@@ -1350,17 +1668,32 @@
             }
 
             if (lvl === 6) {
-                // More Persons
+                // More monkeys
                 for (let i = 0; i < 7; i++) {
                     const ex = rand(600, worldW - 800) | 0;
                     enemies.push({
                         x: ex, y: groundY - 36, w: 22, h: 51,
                         vx: (Math.random() < 0.5 ? 1 : -1) * 1.2,
                         vy: 0, onGround: false,
-                        isPerson: true, shootCooldown: rand(60, 240) | 0,
+                        isMonkey: true, shootCooldown: rand(60, 240) | 0,
                         hp: 4, maxHp: 4, dead: false,
                         patrolX0: ex - 200, patrolX1: ex + 200,
                         dir: 1, walkAnim: 0
+                    });
+                }
+                const level6ChickenRuns = platforms.filter(p => p.y === groundY && p.w > 180 && p.x > 420 && p.x < doorX - 700);
+                for (let i = 0; i < Math.min(2, level6ChickenRuns.length); i++) {
+                    const p = level6ChickenRuns[i];
+                    const ex = clamp(p.x + rand(35, Math.max(40, p.w - 59)), p.x + 20, p.x + p.w - 44) | 0;
+                    enemies.push({
+                        x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                        vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
+                        vy: 0, onGround: false,
+                        isChicken: true,
+                        hp: 1, maxHp: 1, oneShot: true,
+                        stunTimer: 0, dead: false,
+                        patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
+                        dir: 1, walkAnim: rand(0, Math.PI * 2)
                     });
                 }
                 // More fliers - half bats and half flying pigs
@@ -1378,46 +1711,60 @@
                         dir: 1, walkAnim: rand(0, Math.PI * 2)
                     });
                 }
-                // Extra coins/gems for the final boss gauntlet.
+                // Extra coins for the final boss gauntlet.
                 const extraLevel6Items = isEasyMode() ? 1 : 11;
                 for (let i = 0; i < extraLevel6Items; i++) {
-                    coinsArr.push({ x: rand(400, worldW - 400), y: groundY - 20, collected: false });
-                    gems.push({ x: rand(400, worldW - 400), y: rand(H - 300, H - 150), collected: false });
+                    coinsArr.push(makeCoinAwayFromSign(400, worldW - 400, groundY - 20, groundY - 20));
+                    coinsArr.push(makeCoinAwayFromSign(400, worldW - 400, isEasyMode() ? H - 200 : H - 280, H - 150));
                 }
 
                 // Final bosses appear one after another.
-                // Boss 1: Monster (Explicit position fix)
+                // Boss 1: Monster, same setup as the Level 1 boss.
                 enemies.push({
                     x: doorX - 350, y: groundY - 64 - 3, w: 56, h: 64,
-                    vx: -1.0, vy: 0, onGround: false,
-                    hp: 15, maxHp: 15, stompDropsHp: 5, isBig: true, hoverAboveGround: true, dead: false,
-                    patrolX0: doorX - 600, patrolX1: doorX - 150,
-                    dir: 1, walkAnim: 0, waitingForItems: true,
+                    vx: -1.2, vy: 0, onGround: false,
+                    hp: 12, maxHp: 12, stompDropsHp: 4, isBig: true, hoverAboveGround: true,
+                    stunTimer: 0, dead: false, coughBoss: true, coughTimer: 0,
+                    enemyColor1: '#ff4455', enemyColor2: '#cc2233', enemyHeadColor: '#ff6677',
+                    patrolX0: doorX - 700, patrolX1: doorX - 150,
+                    dir: 1, walkAnim: 0,
+                    waitingForItems: true,
                     bossOrder: 1
                 });
-                // Boss 2: Bat
+                // Boss 2: Giant Chicken
                 enemies.push({
-                    x: doorX - 220, y: isEasyMode() ? H - 230 : H - 320, baseY: isEasyMode() ? H - 230 : H - 320, w: 48, h: 40,
+                    x: doorX - 270, y: groundY - 62, w: 58, h: 62,
+                    vx: -1.2, vy: 0, onGround: false, isChicken: true, isBig: true,
+                    shootsEggs: true, shootCooldown: 120,
+                    hp: 22, maxHp: 22, stompDropsHp: 5, dead: false,
+                    patrolX0: doorX - 500, patrolX1: doorX - 80,
+                    dir: 1, walkAnim: 0, waitingForItems: true,
+                    bossOrder: 2
+                });
+                // Boss 3: Bat
+                enemies.push({
+                    x: doorX - 220, y: isEasyMode() ? H - 230 : H - 270, baseY: isEasyMode() ? H - 230 : H - 270, w: 48, h: 40,
                     vx: 0, vy: 0, onGround: false, isBat: true, isBig: true, hitAndRun: true,
                     aiState: 'retreat', aiTimer: 60,
                     hp: 18, maxHp: 18, stompDropsHp: 5, dead: false,
                     patrolX0: doorX - 500, patrolX1: doorX - 100,
                     dir: 1, walkAnim: 0, waitingForItems: true,
                     shootCooldown: 360,
-                    bossOrder: 2
+                    retreatY: isEasyMode() ? H - 230 : H - 260,
+                    bossOrder: 3
                 });
-                // Boss 3: Monkey
+                // Boss 4: Monkey
                 enemies.push({
                     x: doorX - 100, y: groundY - 72, w: 44, h: 72,
                     vx: 1.2, vy: 0, onGround: false,
-                    isPerson: true, isBig: true, shootCooldown: 60,
+                    isMonkey: true, isBig: true, shootCooldown: 60,
                     hp: 20, maxHp: 20, dead: false,
                     patrolX0: doorX - 400, patrolX1: doorX,
                     dir: -1, walkAnim: 0, waitingForItems: true,
                     ghostMode: true, baseY: groundY - 72,
-                    bossOrder: 3
+                    bossOrder: 4
                 });
-                // Boss 4: Flying Pig
+                // Boss 5: Flying Pig
                 enemies.push({
                     x: doorX - 150, y: isEasyMode() ? H - 235 : H - 305, baseY: isEasyMode() ? H - 235 : H - 305, w: 64, h: 48,
                     vx: -1.05, vy: 0, onGround: false, isPig: true, isBig: true,
@@ -1425,7 +1772,7 @@
                     hp: 24, maxHp: 24, stompDropsHp: 5, dead: false,
                     patrolX0: doorX - 470, patrolX1: doorX - 25,
                     dir: 1, walkAnim: 0, waitingForItems: true,
-                    bossOrder: 4
+                    bossOrder: 5
                 });
             }
 
@@ -1442,23 +1789,38 @@
                 const groundRuns = platforms.filter(p => p.y === groundY && p.w > 120 && p.x > 450 && p.x < doorX - 550);
                 for (let i = 0; i < Math.min(11, groundRuns.length); i++) {
                     const p = groundRuns[i];
-                    const isPerson = i % 3 === 1;
-                    const ew = isPerson ? 22 : 28;
-                    const eh = isPerson ? 51 : 32;
+                    const isMonkey = i % 3 === 1;
+                    const ew = isMonkey ? 22 : 28;
+                    const eh = isMonkey ? 51 : 32;
                     const ex = clamp(p.x + rand(25, Math.max(30, p.w - ew - 25)), p.x + 10, p.x + p.w - ew - 10) | 0;
                     enemies.push({
-                        x: ex, y: groundY - eh - (isPerson ? 0 : 3), w: ew, h: eh,
-                        vx: -(isPerson ? 1.05 : 0.9),
+                        x: ex, y: groundY - eh - (isMonkey ? 0 : 3), w: ew, h: eh,
+                        vx: -(isMonkey ? 1.05 : 0.9),
                         vy: 0, onGround: false,
-                        isPerson: isPerson,
-                        leftOnly: !isPerson,
-                        stopAtLeftLedge: isPerson,
+                        isMonkey: isMonkey,
+                        leftOnly: !isMonkey,
+                        stopAtLeftLedge: isMonkey,
                         oneShot: true,
-                        shootCooldown: isPerson ? (rand(80, 220) | 0) : 0,
-                        hp: isPerson ? 4 : 2, maxHp: isPerson ? 4 : 2,
+                        shootCooldown: isMonkey ? (rand(80, 220) | 0) : 0,
+                        hp: isMonkey ? 4 : 2, maxHp: isMonkey ? 4 : 2,
                         stunTimer: 0, dead: false,
                         patrolX0: p.x + 10, patrolX1: p.x + p.w - ew - 10,
                         dir: -1, walkAnim: 0
+                    });
+                }
+                for (let i = 0; i < Math.min(2, groundRuns.length); i++) {
+                    const p = groundRuns[Math.max(0, groundRuns.length - 1 - i)];
+                    const ex = clamp(p.x + rand(35, Math.max(40, p.w - 59)), p.x + 20, p.x + p.w - 44) | 0;
+                    enemies.push({
+                        x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                        vx: -1.0,
+                        vy: 0, onGround: false,
+                        isChicken: true,
+                        oneShot: true,
+                        hp: 1, maxHp: 1,
+                        stunTimer: 0, dead: false,
+                        patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
+                        dir: -1, walkAnim: rand(0, Math.PI * 2)
                     });
                 }
 
@@ -1495,7 +1857,7 @@
             }
 
             enemies = applyDifficultyToEnemies(enemies);
-            return { worldW, platforms, spikes, coins: coinsArr, gems, hearts: heartsArr, enemies, door, groundY, guns };
+            return { worldW, platforms, spikes, coins: coinsArr, hearts: heartsArr, enemies, door, groundY, guns };
         }
 
         let globalHasGun = true;
@@ -1510,12 +1872,15 @@
                 invincible: 0, // frames of invincibility
                 dir: 1, // 1=right -1=left
                 hasGun: true, gunCooldown: 0,
+                eggSplatTimer: 0,
                 walkAnim: 0,
                 dead: false,
                 coyoteTime: 0,
                 jumpBuffered: false,
                 enteringDoor: false,
                 eatenTimer: 0,
+                eatenBurpTimer: 0,
+                eatenBurpDone: false,
                 eatenBy: null,
                 restartHP: null,
                 restartItems: null,
@@ -1694,6 +2059,101 @@
                 }
                 ctx.fillStyle = 'rgba(255,255,255,0.09)';
                 ctx.fillRect(x, y, p.w, 3);
+            }
+        }
+
+        function drawWoodenBackgroundSign(cam, worldX, lines, signW = 118, signH = 52) {
+            const x = worldX - cam;
+            const y = H - 40 - (signH + 36);
+            if (x > W + signW + 20 || x < -signW - 60) return;
+
+            ctx.save();
+            ctx.globalAlpha = 0.78;
+
+            const postX = x + signW / 2 - 3;
+            ctx.fillStyle = '#4a2b18';
+            ctx.fillRect(postX, y + signH - 3, 7, 79);
+            ctx.fillStyle = '#2d190e';
+            ctx.fillRect(postX + 5, y + signH - 1, 2, 76);
+
+            const plankColors = ['#8b5a2b', '#775025', '#94602f'];
+            for (let i = 0; i < 3; i++) {
+                const plankH = signH / 3;
+                const py = y + i * plankH;
+                ctx.fillStyle = plankColors[i];
+                ctx.fillRect(x + (i === 1 ? 1 : 0), py, signW - (i === 2 ? 3 : 0), plankH + 1);
+                ctx.fillStyle = 'rgba(0,0,0,0.16)';
+                ctx.fillRect(x + 4, py + plankH - 3, signW - 10, 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.fillRect(x + 8, py + 3, signW - 26, 1);
+            }
+
+            ctx.strokeStyle = '#3a2113';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, y + 1, signW - 2, signH - 1);
+
+            ctx.fillStyle = '#2d190e';
+            const knots = Math.max(5, Math.floor(signW / 22));
+            for (let i = 0; i < knots; i++) {
+                const knotX = x + 14 + i * 22;
+                const knotY = y + 9 + (i % 3) * Math.max(15, signH / 4);
+                ctx.globalAlpha = 0.18;
+                ctx.beginPath();
+                ctx.ellipse(knotX, knotY, 4, 2, 0.35, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.globalAlpha = 0.82;
+            ctx.fillStyle = '#ffd84a';
+            ctx.font = '5px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const gap = lines.length === 2 ? signH * 0.28 : Math.min(16, signH * 0.24);
+            const startY = signH / 2 - ((lines.length - 1) * gap) / 2;
+            for (let i = 0; i < lines.length; i++) {
+                ctx.fillText(lines[i], x + signW / 2, y + startY + i * gap);
+            }
+            ctx.restore();
+        }
+
+        function drawLevelBackgroundSigns(cam) {
+            if (level === 1) {
+                drawWoodenBackgroundSign(cam, 360, [
+                    'The monsters are',
+                    'sensitive, please',
+                    "don't laugh at",
+                    'their antennas!'
+                ]);
+            } else if (level === 2) {
+                drawWoodenBackgroundSign(cam, 330, [
+                    'Eggs may be used',
+                    'as emotional',
+                    'projectiles.'
+                ], 175, 70);
+            } else if (level === 3) {
+                drawWoodenBackgroundSign(cam, 325, [
+                    'Echo location',
+                    'in progress. Try',
+                    'not to think loudly.'
+                ], 185, 70);
+            } else if (level === 4) {
+                drawWoodenBackgroundSign(cam, 330, [
+                    'Team Chimp: Armed',
+                    'with shades, bananas,',
+                    'and unlimited swagger!'
+                ], 175, 70);
+            } else if (level === 5) {
+                drawWoodenBackgroundSign(cam, 320, [
+                    'Beware of the flying pigs!',
+                    'They have ketchup, and',
+                    "they're not afraid to use it!"
+                ], 205, 70);
+            } else if (level === 6) {
+                drawWoodenBackgroundSign(cam, 315, [
+                    'Enemies ahead. Some',
+                    'are flying. Some are',
+                    'just emotionally airborne.'
+                ], 215, 70);
             }
         }
 
@@ -1887,6 +2347,33 @@
                 }
             }
 
+            if (pl.eggSplatTimer > 0) {
+                const splatAlpha = Math.min(0.92, pl.eggSplatTimer / 35);
+                const spotX = (px) => x + (d > 0 ? px : pl.w - px);
+                ctx.save();
+                ctx.globalAlpha = splatAlpha;
+                ctx.fillStyle = '#ffd44a';
+                ctx.beginPath();
+                ctx.ellipse(spotX(11), y + 28, 7, 9, -0.18 * d, 0, Math.PI * 2);
+                ctx.ellipse(spotX(15), y + 36, 4, 8, 0.1 * d, 0, Math.PI * 2);
+                ctx.ellipse(spotX(8), y + 18, 4, 5, 0.25 * d, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff1a8';
+                ctx.beginPath();
+                ctx.ellipse(spotX(12), y + 25, 3, 4, -0.2 * d, 0, Math.PI * 2);
+                ctx.ellipse(spotX(17), y + 42, 2, 5, 0.1 * d, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(176,112,20,0.38)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(spotX(10), y + 33);
+                ctx.lineTo(spotX(10), y + 46);
+                ctx.moveTo(spotX(15), y + 40);
+                ctx.lineTo(spotX(15), y + 50);
+                ctx.stroke();
+                ctx.restore();
+            }
+
             ctx.restore();
         }
 
@@ -1897,7 +2384,8 @@
 
             if (en.isHippo) {
                 const stunned = en.stunTimer > 0;
-                const legAnim = Math.sin(en.walkAnim) * 5;
+                const hippoEatSequence = player && player.eatenBy === en && (player.eatenTimer > 0 || player.eatenBurpTimer > 0 || player.eatenBurpDone);
+                const legAnim = hippoEatSequence && en.onGround ? 0 : Math.sin(en.walkAnim) * 5;
 
                 ctx.fillStyle = 'rgba(0,0,0,0.22)';
                 ctx.beginPath();
@@ -1937,10 +2425,15 @@
                 ctx.arc(x + en.w * 0.86, y + en.h * 0.45, 3, 0, Math.PI * 2);
                 ctx.fill();
 
-                if (player && player.eatenBy === en && player.eatenTimer > 0) {
-                    const eatProgress = 1 - player.eatenTimer / 60;
-                    const open = eatProgress < 0.62 ? Math.min(1, eatProgress / 0.28) : Math.max(0.18, 1 - (eatProgress - 0.62) / 0.22);
-                    const chompShake = player.eatenTimer < 22 ? Math.sin(player.eatenTimer * 0.9) * 3 : 0;
+                if ((player && player.eatenBy === en && player.eatenTimer > 0) || en.burpMouthTimer > 0) {
+                    const isEatingPlayer = player && player.eatenBy === en && player.eatenTimer > 0;
+                    const eatProgress = isEatingPlayer ? 1 - player.eatenTimer / 60 : 0;
+                    const burpProgress = en.burpMouthTimer > 0 ? 1 - en.burpMouthTimer / 24 : 0;
+                    const burpOpen = en.burpMouthTimer > 0 ? Math.sin(burpProgress * Math.PI) * 0.22 : 0;
+                    const open = isEatingPlayer
+                        ? (eatProgress < 0.62 ? Math.min(1, eatProgress / 0.28) : Math.max(0.18, 1 - (eatProgress - 0.62) / 0.22))
+                        : burpOpen;
+                    const chompShake = isEatingPlayer && player.eatenTimer < 22 ? Math.sin(player.eatenTimer * 0.9) * 3 : 0;
                     const mouthH = en.h * (0.14 + open * 0.34);
                     const mouthX = x + en.w * 0.84;
                     const mouthY = y + en.h * 0.58 + chompShake;
@@ -1956,28 +2449,79 @@
                     ctx.beginPath();
                     ctx.ellipse(mouthX + en.w * 0.03, mouthY + mouthH * 0.35, en.w * 0.13, mouthH * 0.3, 0, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.fillStyle = '#f5ede6';
-                    ctx.beginPath();
-                    const topY = mouthY - mouthH * 0.72, botY = mouthY + mouthH * 0.72, biteY = mouthY + mouthH * 0.04;
-                    ctx.moveTo(x + en.w * 0.66, topY);
-                    ctx.lineTo(x + en.w * 0.72, biteY);
-                    ctx.lineTo(x + en.w * 0.78, topY);
-                    ctx.moveTo(x + en.w * 0.98, topY + 2);
-                    ctx.lineTo(x + en.w * 0.91, biteY);
-                    ctx.lineTo(x + en.w * 0.84, topY + 2);
-                    ctx.moveTo(x + en.w * 0.69, botY);
-                    ctx.lineTo(x + en.w * 0.76, biteY);
-                    ctx.lineTo(x + en.w * 0.83, botY);
-                    ctx.moveTo(x + en.w * 0.94, botY - 2);
-                    ctx.lineTo(x + en.w * 0.87, biteY);
-                    ctx.lineTo(x + en.w * 0.8, botY - 2);
-                    ctx.fill();
+                    if (isEatingPlayer) {
+                        ctx.fillStyle = '#f5ede6';
+                        ctx.beginPath();
+                        const topY = mouthY - mouthH * 0.72, botY = mouthY + mouthH * 0.72, biteY = mouthY + mouthH * 0.04;
+                        ctx.moveTo(x + en.w * 0.66, topY);
+                        ctx.lineTo(x + en.w * 0.72, biteY);
+                        ctx.lineTo(x + en.w * 0.78, topY);
+                        ctx.moveTo(x + en.w * 0.98, topY + 2);
+                        ctx.lineTo(x + en.w * 0.91, biteY);
+                        ctx.lineTo(x + en.w * 0.84, topY + 2);
+                        ctx.moveTo(x + en.w * 0.69, botY);
+                        ctx.lineTo(x + en.w * 0.76, biteY);
+                        ctx.lineTo(x + en.w * 0.83, botY);
+                        ctx.moveTo(x + en.w * 0.94, botY - 2);
+                        ctx.lineTo(x + en.w * 0.87, biteY);
+                        ctx.lineTo(x + en.w * 0.8, botY - 2);
+                        ctx.fill();
+                    }
                 }
 
                 ctx.fillStyle = '#4c4058';
                 ctx.fillRect(x + en.w * 0.18, y + en.h * 0.72 + legAnim, en.w * 0.14, en.h * 0.28);
                 ctx.fillRect(x + en.w * 0.42, y + en.h * 0.72 - legAnim, en.w * 0.14, en.h * 0.28);
                 ctx.fillRect(x + en.w * 0.64, y + en.h * 0.72 + legAnim, en.w * 0.14, en.h * 0.28);
+            } else if (en.isChicken) {
+                const bob = Math.sin(en.walkAnim * 2) * 1.5;
+                const step = Math.sin(en.walkAnim * 4) * 2;
+                const faceRight = en.dir >= 0;
+                const headX = x + en.w * (faceRight ? 0.68 : 0.32);
+                const beakDir = faceRight ? 1 : -1;
+                const eyeX = x + en.w * (faceRight ? 0.73 : 0.25);
+
+                ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                ctx.beginPath();
+                ctx.ellipse(x + en.w / 2, y + en.h + 2, en.w * 0.42, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#f7f0d4';
+                ctx.beginPath();
+                ctx.ellipse(x + en.w * 0.46, y + en.h * 0.56 + bob, en.w * 0.34, en.h * 0.34, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#fff8df';
+                ctx.beginPath();
+                ctx.arc(headX, y + en.h * 0.34 + bob, en.w * 0.22, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#d32f2f';
+                ctx.beginPath();
+                ctx.arc(headX - en.w * 0.05, y + en.h * 0.12 + bob, 3, 0, Math.PI * 2);
+                ctx.arc(headX + en.w * 0.02, y + en.h * 0.1 + bob, 3, 0, Math.PI * 2);
+                ctx.arc(headX + en.w * 0.09, y + en.h * 0.13 + bob, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#111';
+                ctx.fillRect(eyeX, y + en.h * 0.32 + bob, 2, 2);
+
+                ctx.fillStyle = '#ffb300';
+                ctx.beginPath();
+                ctx.moveTo(headX + beakDir * en.w * 0.2, y + en.h * 0.38 + bob);
+                ctx.lineTo(headX + beakDir * en.w * 0.36, y + en.h * 0.42 + bob);
+                ctx.lineTo(headX + beakDir * en.w * 0.2, y + en.h * 0.47 + bob);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = '#d78b22';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x + en.w * 0.42, y + en.h * 0.82);
+                ctx.lineTo(x + en.w * 0.36, y + en.h + step);
+                ctx.moveTo(x + en.w * 0.58, y + en.h * 0.82);
+                ctx.lineTo(x + en.w * 0.64, y + en.h - step);
+                ctx.stroke();
             } else if (en.isPig) {
                 const isGiant = en.isBig;
                 const stunned = en.stunTimer > 0;
@@ -2142,7 +2686,7 @@
                 ctx.ellipse(x + en.w / 2, y + en.h + 2, 12, 3, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                if (en.isPerson) {
+                if (en.isMonkey) {
                     const isB = en.isBig;
                     const legAnim = Math.sin(en.walkAnim) * (isB ? 10 : 5);
                     
@@ -2268,32 +2812,68 @@
                     ctx.restore();
                 } else {
                     const stunned = en.stunTimer > 0;
-                    const eg = ctx.createLinearGradient(x, y, x, y + en.h);
-                    eg.addColorStop(0, stunned ? '#eeaa00' : PAL.enemy1);
-                    eg.addColorStop(1, stunned ? '#aa7700' : PAL.enemy2);
+                    const startled = player && Math.abs((player.x + player.w / 2) - (en.x + en.w / 2)) < 95 && Math.abs(player.y - en.y) < 70;
+                    const bigEyes = startled || en.bigEyeTimer > 0;
+                    const bounce = stunned ? 0 : Math.abs(Math.sin(en.walkAnim * 1.8)) * 3;
+                    const wobble = Math.sin(en.walkAnim * 2.2) * 2;
+                    const my = y - bounce;
+                    const coughing = en.coughBoss && en.coughTimer > 0;
+                    if (coughing) {
+                        const coughScale = 1 + Math.sin(en.coughTimer * 0.85) * 0.14;
+                        const coughShake = Math.sin(en.coughTimer * 2.8) * 4.5;
+                        ctx.save();
+                        ctx.translate(x + en.w / 2 + coughShake, my + en.h / 2);
+                        ctx.scale(coughScale, 1 / coughScale);
+                        ctx.translate(-(x + en.w / 2), -(my + en.h / 2));
+                    }
+                    const eg = ctx.createLinearGradient(x, my, x, my + en.h);
+                    eg.addColorStop(0, stunned ? '#eeaa00' : (en.enemyColor1 || '#ff4455'));
+                    eg.addColorStop(1, stunned ? '#aa7700' : (en.enemyColor2 || '#cc2233'));
                     ctx.fillStyle = eg;
                     ctx.beginPath();
-                    ctx.roundRect(x, y + 12, en.w, en.h - 12, 4);
+                    ctx.roundRect(x, my + 12, en.w, en.h - 12 + bounce * 0.35, 4);
                     ctx.fill();
 
                     // Head
-                    ctx.fillStyle = stunned ? '#ffcc44' : '#ff6677';
+                    ctx.fillStyle = stunned ? '#ffcc44' : (en.enemyHeadColor || '#ff6677');
                     ctx.beginPath();
-                    ctx.roundRect(x + 2, y, en.w - 4, 16, 5);
+                    ctx.roundRect(x + 2, my, en.w - 4, 16, 5);
                     ctx.fill();
 
                     // Eyes
                     ctx.fillStyle = '#fff';
-                    ctx.fillRect(x + 5, y + 4, 5, 5);
-                    ctx.fillRect(x + en.w - 10, y + 4, 5, 5);
+                    ctx.fillRect(x + 4, my + (bigEyes ? 0 : 4), bigEyes ? 8 : 5, bigEyes ? 11 : 5);
+                    ctx.fillRect(x + en.w - 12, my + (bigEyes ? 0 : 4), bigEyes ? 8 : 5, bigEyes ? 11 : 5);
                     ctx.fillStyle = '#111';
-                    ctx.fillRect(x + 6 + (en.dir > 0 ? 1 : 0), y + 5, 3, 3);
-                    ctx.fillRect(x + en.w - 9 + (en.dir > 0 ? 1 : 0), y + 5, 3, 3);
+                    ctx.fillRect(x + 6 + (en.dir > 0 ? 1 : 0), my + 5, 3, 3);
+                    ctx.fillRect(x + en.w - 10 + (en.dir > 0 ? 1 : 0), my + 5, 3, 3);
+                    if (startled) {
+                        ctx.strokeStyle = '#111';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(x + 4, my + 1);
+                        ctx.lineTo(x + 11, my - 2);
+                        ctx.moveTo(x + en.w - 11, my - 2);
+                        ctx.lineTo(x + en.w - 4, my + 1);
+                        ctx.stroke();
+                    }
 
-                    // Horns
+                    // Wobbly antennae
                     ctx.fillStyle = '#882200';
-                    ctx.fillRect(x + 4, y - 5, 4, 8);
-                    ctx.fillRect(x + en.w - 8, y - 5, 4, 8);
+                    ctx.strokeStyle = '#882200';
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 7, my + 1);
+                    ctx.quadraticCurveTo(x + 5 + wobble, my - 5, x + 4 + wobble, my - 10);
+                    ctx.moveTo(x + en.w - 7, my + 1);
+                    ctx.quadraticCurveTo(x + en.w - 5 - wobble, my - 5, x + en.w - 4 - wobble, my - 10);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.arc(x + 4 + wobble, my - 10, 3, 0, Math.PI * 2);
+                    ctx.arc(x + en.w - 4 - wobble, my - 10, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    if (coughing) ctx.restore();
                 }
             }
 
@@ -2308,48 +2888,39 @@
             ctx.restore();
         }
 
-                function drawCoin(c, cam, t) {
+        function drawCoinShape(x, y, radius = 9, sparklePhase = 0) {
+            const shine = 0.75 + Math.sin(sparklePhase) * 0.25;
+            ctx.fillStyle = '#f6c43a';
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#9f6518';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = '#ffe887';
+            ctx.beginPath();
+            ctx.arc(x - radius * 0.28, y - radius * 0.32, Math.max(2, radius * 0.22), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(120,75,20,0.55)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(x, y, radius * 0.42, radius * 0.72, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(255,255,230,${0.45 + shine * 0.35})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x + radius * 0.55, y - radius * 0.95);
+            ctx.lineTo(x + radius * 0.55, y - radius * 0.25);
+            ctx.moveTo(x + radius * 0.2, y - radius * 0.6);
+            ctx.lineTo(x + radius * 0.9, y - radius * 0.6);
+            ctx.stroke();
+        }
+
+        function drawCoin(c, cam, t) {
             if (c.collected) return;
             const x = c.x - cam, y = c.y + Math.sin(t * 0.06 + (c.bob || 0)) * 4;
             ctx.save();
-            ctx.fillStyle = PAL.gem;
-            ctx.beginPath();
-            ctx.moveTo(x, y - 12);
-            ctx.lineTo(x + 8, y - 2);
-            ctx.lineTo(x, y + 12);
-            ctx.lineTo(x - 8, y - 2);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.beginPath();
-            ctx.moveTo(x, y - 12);
-            ctx.lineTo(x + 4, y - 2);
-            ctx.lineTo(x, y - 4);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
-
-        function drawGem(g, cam, t) {
-            if (g.collected) return;
-            const x = g.x - cam, y = g.y + Math.sin(t * 0.06 + g.bob) * 4;
-            ctx.save();
-            ctx.fillStyle = PAL.gem;
-            // Diamond shape
-            ctx.beginPath();
-            ctx.moveTo(x, y - 12);
-            ctx.lineTo(x + 8, y - 2);
-            ctx.lineTo(x, y + 12);
-            ctx.lineTo(x - 8, y - 2);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.beginPath();
-            ctx.moveTo(x, y - 12);
-            ctx.lineTo(x + 4, y - 2);
-            ctx.lineTo(x, y - 4);
-            ctx.closePath();
-            ctx.fill();
+            drawCoinShape(x, y, 9, t * 0.08 + x * 0.03);
             ctx.restore();
         }
 
@@ -2514,7 +3085,6 @@
         function cloneCollectedItems() {
             return {
                 coins: ld.coins.map(c => ({ ...c })),
-                gems: ld.gems.map(g => ({ ...g })),
                 deadEnemies: ld.enemies.map(e => !!e.dead)
             };
         }
@@ -2524,7 +3094,6 @@
             ld = makeLevelData(level);
             if (preservedItems) {
                 ld.coins = preservedItems.coins.map(c => ({ ...c }));
-                ld.gems = preservedItems.gems.map(g => ({ ...g }));
                 if (preservedItems.deadEnemies) {
                     ld.enemies.forEach((en, i) => {
                         if (!en.isHippo && preservedItems.deadEnemies[i]) en.dead = true;
@@ -2543,13 +3112,7 @@
             particles = [];
             floatingTexts = [];
             bullets = [];
-            if (level === 4) {
-                levelIntroTimer = 240;
-                levelIntroLines = T('level4Intro');
-            } else if (level === 5) {
-                levelIntroTimer = 240;
-                levelIntroLines = T('level5Intro');
-            } else if (level === 7) {
+            if (level === 7) {
                 levelIntroTimer = -1;
                 levelIntroLines = T('level7Intro');
             } else {
@@ -2572,13 +3135,14 @@
         // ─── Update ───────────────────────────────────────────────────────────────────
         function update() {
             const pl = player;
-            const { platforms, spikes, coins: coinsArr, gems, hearts, enemies, door, worldW } = ld;
+            const { platforms, spikes, coins: coinsArr, hearts, enemies, door, worldW } = ld;
 
             if (state === 'playing') {
                 t++;
 
                 if (pl.eatenTimer > 0) {
                     pl.eatenTimer--;
+                    settleHippoOnGround(pl.eatenBy, ld.groundY);
                     if (pl.eatenBy) {
                         const eatProgress = 1 - pl.eatenTimer / 60;
                         const mouthX = pl.eatenBy.x + pl.eatenBy.w * 0.84 - pl.w / 2;
@@ -2595,6 +3159,31 @@
                         }
                     }
                     if (pl.eatenTimer <= 0) {
+                        pl.eatenTimer = 0;
+                        pl.alpha = 0;
+                        pl.eatenBurpTimer = 90;
+                        pl.eatenBurpDone = false;
+                    }
+                    updateParticles();
+                    updateFloatingTexts();
+                    updateBullets(enemies, pl, true);
+                    updateHUD(pl);
+                    return;
+                }
+
+                const activeBurpedGun = ld.guns && ld.guns.find(g => g.burped && !g.collected && !g.fellOut && (g.floorTimer || 0) < 60);
+                if (pl.eatenBurpTimer > 0 || activeBurpedGun) {
+                    settleHippoOnGround(pl.eatenBy, ld.groundY);
+                    updateBurpedGuns(ld.guns, platforms);
+                    if (pl.eatenBurpTimer > 0) pl.eatenBurpTimer--;
+                    if (!pl.eatenBurpDone && pl.eatenBurpTimer <= 60) {
+                        pl.eatenBurpDone = true;
+                        if (pl.eatenBy && pl.hasGun) spawnBurpedGun(pl.eatenBy);
+                    }
+                    if (pl.eatenBy && pl.eatenBy.burpMouthTimer > 0) pl.eatenBy.burpMouthTimer--;
+                    const burpedGun = ld.guns && ld.guns.find(g => g.burped && !g.collected);
+                    const burpedGunDone = !burpedGun || burpedGun.fellOut || (burpedGun.floorTimer || 0) >= 60;
+                    if (pl.eatenBurpTimer <= 0 && burpedGunDone) {
                         const restartHP = pl.restartHP;
                         if (restartHP <= 0) {
                             pl.dead = true;
@@ -2603,6 +3192,10 @@
                             initLevel(restartHP, pl.restartItems);
                         }
                     }
+                    updateParticles();
+                    updateFloatingTexts();
+                    updateBullets(enemies, pl, true);
+                    updateHUD(pl);
                     return;
                 }
 
@@ -2626,16 +3219,15 @@
                 }
 
                 // ── Player input ──
-                const speed = 3.0;
-                const jumpForce = -10.5;
+                const speed = isEasyMode() ? 3.6 : 3.0;
+                const jumpForce = isEasyMode() ? -12.2 : -10.5;
 
                 let isLeft = keys['ArrowLeft'] || keys['KeyA'];
                 let isRight = keys['ArrowRight'] || keys['KeyD'];
                 let isJump = keys['ArrowUp'] || keys['KeyW'];
                 let isAtk = keys['KeyZ'];
-                let isShoot = keys['KeyX'] || keys['Space'];
+                let isShoot = keys['KeyX'] || (keys['Space'] && !suppressSpaceShootUntilKeyup);
                 let isCrouch = keys['ArrowDown'] || keys['KeyS'];
-                if (level === 7) isLeft = false;
 
                 if (pl.enteringDoor) {
                     isLeft = false;
@@ -2751,15 +3343,28 @@
 
                 if (pl.onGround && Math.abs(pl.vx) > 0.3) pl.walkAnim += 0.25;
                 if (pl.invincible > 0) pl.invincible--;
+                if (pl.eggSplatTimer > 0) pl.eggSplatTimer--;
 
                 updateCam(pl, worldW);
 
                 for (const en of enemies) {
                     if (en.dead || en.waitingForItems) continue;
+                    if (isPinkMonster(en)) {
+                        if (en.bigEyeTimer > 0) {
+                            en.bigEyeTimer--;
+                        } else {
+                            if (en.bigEyeCooldown === undefined) en.bigEyeCooldown = rand(120, 420) | 0;
+                            en.bigEyeCooldown--;
+                            if (en.bigEyeCooldown <= 0) {
+                                en.bigEyeTimer = 240;
+                                en.bigEyeCooldown = rand(360, 900) | 0;
+                            }
+                        }
+                    }
                     if (!en.swoopAbovePlayer) en.x += en.vx;
                     if (en.isHippo) {
                         const targetGap = pl.x - en.x;
-                        en.vx = enemySpeed(targetGap > 320 ? 2.85 : targetGap > 120 ? 2.1 : 1.45);
+                        en.vx = hippoSpeed(targetGap > 320 ? 2.85 : targetGap > 120 ? 2.1 : 1.45);
                         const playerOverHippo = pl.x + pl.w > en.x + en.w * 0.08 && pl.x < en.x + en.w * 1.02 && (pl.y + pl.h) < en.y + en.h * 0.25;
                         if (playerOverHippo && en.onGround) {
                             en.vy = -13;
@@ -2835,7 +3440,7 @@
                             if (en.aiTimer > 0) en.aiTimer--;
                             if (en.aiState === 'retreat') {
                                 en.vx = (pl.x - en.x) > 0 ? -enemySpeed(1.5) : enemySpeed(1.5);
-                                en.baseY = lerp(en.baseY, H - 350, 0.05);
+                                en.baseY = lerp(en.baseY, en.retreatY || H - 350, 0.05);
                                 if (en.aiTimer <= 0) { en.aiState = 'attack'; en.aiTimer = 90; }
                             } else {
                                 const dx = pl.x - en.x, dy = pl.y - en.baseY;
@@ -2864,7 +3469,7 @@
                         }
                     } else {
                         if (en.ghostMode) en.y = en.baseY;
-                        else if ((!en.isPerson && !en.isBat && !en.isBig) || en.hoverAboveGround) {
+                        else if ((!en.isMonkey && !en.isBat && !en.isBig) || en.hoverAboveGround) {
                             // Pink monsters and monster bosses hover/float 3px above the ground line.
                             en.vy = 0;
                             en.y = (H - 40) - en.h - 3;
@@ -2877,7 +3482,7 @@
                             if (en.vx === 0 && Math.abs(preVX) > 0.1) en.vx = -preVX;
                         }
 
-                        if ((en.isPerson || en.isBig) && en.onGround) {
+                        if ((en.isMonkey || en.isBig) && en.onGround) {
                             const checkX = en.x + (en.vx > 0 ? en.w + 10 : -10), checkY = en.y + en.h + 5;
                             let hasGround = false;
                             for (const p of platforms) if (checkX > p.x && checkX < p.x + p.w && checkY > p.y && checkY < p.y + p.h + 30) { hasGround = true; break; }
@@ -2893,17 +3498,32 @@
                         en.dir = en.stopAtLeftLedge ? -1 : (en.vx > 0 ? 1 : -1);
                         en.walkAnim = (en.walkAnim || 0) + 0.15;
                         if (!en.dead) {
-                            if (en.isPerson || en.isBig) {
+                            if (en.isMonkey || (en.isBig && (!en.isChicken || en.shootsEggs))) {
                                 if (en.shootCooldown > 0) en.shootCooldown--;
                                 else if (en.x > cam - 50 && en.x < cam + W + 50) {
-                                    if (en.isPerson) {
+                                    if (en.isMonkey) {
                                         if (Math.abs(pl.y - en.y) < 180) {
                                             spawnEnemyBullet(en, '#ffaa44'); 
                                             en.shootCooldown = enemyShootDelay(en.isBig ? 120 : 220);
                                         }
+                                    } else if (en.shootsEggs) {
+                                        spawnEnemyBullet(en, '#fff7dc');
+                                        en.shootCooldown = enemyShootDelay(200);
                                     } else if (en.isBig) { // Level 1 Boss
-                                        spawnEnemyBullet(en, '#ff0000', null, null, true); 
-                                        en.shootCooldown = enemyShootDelay(240);
+                                        if (en.coughBoss) {
+                                            if (en.coughTimer > 0) {
+                                                en.coughTimer--;
+                                                if (en.coughTimer === 0) {
+                                                    spawnEnemyBullet(en, '#ff0000', null, null, true);
+                                                    en.shootCooldown = enemyShootDelay(240);
+                                                }
+                                            } else {
+                                                en.coughTimer = 24;
+                                            }
+                                        } else {
+                                            spawnEnemyBullet(en, '#ff0000', null, null, true);
+                                            en.shootCooldown = enemyShootDelay(240);
+                                        }
                                     }
                                 }
                             }
@@ -2913,7 +3533,9 @@
                     en.x = clamp(en.x, 0, worldW - en.w);
                     if (en.stunTimer > 0) en.stunTimer--;
 
-                    const enRect = { x: en.x - 2, y: en.y - 2, w: en.w + 4, h: en.h + 4 };
+                    const enRect = (level === 7 && en.isHippo)
+                        ? { x: en.x - 8, y: en.y - 120, w: en.w + 16, h: en.h + 124 }
+                        : { x: en.x - 2, y: en.y - 2, w: en.w + 4, h: en.h + 4 };
                     if (!en.dead && isOverlap(pl, enRect)) {
                         if (level === 7 && en.isHippo && pl.eatenTimer <= 0) {
                             pl.hp--;
@@ -2925,14 +3547,20 @@
                             pl.vy = 0;
                             en.chompTimer = 60;
                             spawnParticles(pl.x + pl.w / 2, pl.y + pl.h / 2, '#ffccaa', 20);
-                            SND.hit();
                             return;
                         }
                         if (!en.unStompable && !pl.onGround && pl.vy > 0 && (pl.y + pl.h) < (en.y + en.h * 0.4) && (pl.x + pl.w * 0.1) < (en.x + en.w + 4) && (pl.x + pl.w * 0.9) > (en.x - 4)) {
                             en.hp -= 1;
                             if (en.hp <= 0) {
-                                en.dead = true; enemiesKilled++; spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
-                                if (en.isBig) SND.bossDie(); else SND.kill();
+                                en.dead = true; enemiesKilled++;
+                                if (en.isChicken) spawnFeathers(en.x + en.w / 2, en.y + en.h / 2);
+                                else if (isPinkMonster(en)) spawnMonsterOops(en);
+                                else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
+                                if (en.isChicken) SND.chickenDie();
+                                else if (en.isMonkey) SND.monkeyDie();
+                                else if (isPinkMonster(en)) SND.monsterWhistle();
+                                else if (en.isBig) SND.bossDie();
+                                else SND.kill();
                             } else { en.stunTimer = 25; spawnParticles(en.x + en.w / 2, en.y, '#ff4455', 10); SND.hit(); }
                             pl.vy = -9; pl.jumpsLeft = 1;
                         } else if (pl.invincible === 0) {
@@ -2952,13 +3580,10 @@
                 for (const c of coinsArr) if (!c.collected && isOverlap(pl, { x: c.x - 8, y: c.y - 8, w: 16, h: 16 })) {
                     c.collected = true; spawnParticles(c.x, c.y, '#ffe066', 5); spawnFloatingText(c.x, c.y - 10, '+1'); SND.coin();
                 }
-                for (const g of gems) if (!g.collected && isOverlap(pl, { x: g.x - 8, y: g.y - 12, w: 16, h: 24 })) {
-                    g.collected = true; spawnParticles(g.x, g.y, '#00eeff', 10); spawnFloatingText(g.x, g.y - 10, '+1'); SND.coin();
-                }
                 for (const h of hearts) if (!h.collected && isOverlap(pl, { x: h.x - 8, y: h.y - 8, w: 16, h: 16 })) {
                     h.collected = true; if (pl.hp < pl.maxHp) pl.hp++; spawnParticles(h.x, h.y, '#ff4466', 10); spawnFloatingText(h.x, h.y - 10, '+1'); SND.heart();
                 }
-                const totalItemsRaw = (coinsArr.length + gems.length), collectedItemsRaw = (coinsArr.filter(c => c.collected).length + gems.filter(g => g.collected).length);
+                const totalItemsRaw = coinsArr.length, collectedItemsRaw = coinsArr.filter(c => c.collected).length;
                 const hasSequentialBosses = enemies.some(e => e.bossOrder);
                 const activeSequentialBoss = hasSequentialBosses && enemies.some(e => e.bossOrder && !e.dead && !e.waitingForItems);
                 const nextSequentialBossOrder = (hasSequentialBosses && !activeSequentialBoss)
@@ -3021,10 +3646,10 @@
             drawBg(cam, t);
 
             // World elements
+            drawLevelBackgroundSigns(cam);
             for (const p of ld.platforms) drawPlatform(p, cam);
             for (const sk of ld.spikes) drawSpike(sk, cam);
             for (const c of ld.coins) drawCoin(c, cam, t);
-            for (const g of ld.gems) drawGem(g, cam, t);
             for (const h of ld.hearts) drawHeart(h, cam, t);
             if (ld.guns) {
                 for (const g of ld.guns) drawGunItem(g, cam, t);
@@ -3054,8 +3679,8 @@
 
             // Door hint
             if (!ld.door.open) {
-                const totalItems = ld.coins.length + ld.gems.length;
-                const collected = ld.coins.filter(c => c.collected).length + ld.gems.filter(g => g.collected).length;
+                const totalItems = ld.coins.length;
+                const collected = ld.coins.filter(c => c.collected).length;
                 const needed = Math.ceil(totalItems * 0.6);
                 const bossDead = ld.enemies.every(e => e.isHippo || !e.isBig || e.dead);
 
@@ -3189,11 +3814,13 @@
             if (paused) return;
             if (e.code === 'Space') {
                 if (state === 'dead') {
+                    suppressSpaceShootUntilKeyup = true;
                     enemiesKilled = 0;
                     initLevel(5);
                     state = 'playing';
                     SND.stopMusic(); SND.resumeMusic();
                 } else if (state === 'win') {
+                    suppressSpaceShootUntilKeyup = true;
                     if (level < MAX_LEVELS) {
                         level++;
                         initLevel();
