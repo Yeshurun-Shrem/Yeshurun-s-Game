@@ -516,6 +516,7 @@
             bgMusic: null,
             eggCrackAudio: null,
             fireworksAudio: null,
+            hippoAudio: null,
             init() { 
                 if (!audioCtx) audioCtx = new AudioContext(); 
                 if (!this.bgMusic) {
@@ -536,6 +537,13 @@
                     this.fireworksAudio.volume = 0.55;
                     this.fireworksAudio.load();
                 }
+                if (!this.hippoAudio) {
+                    this.hippoAudio = new Audio('hippo.mp3');
+                    this.hippoAudio.preload = 'auto';
+                    this.hippoAudio.loop = true;
+                    this.hippoAudio.volume = 0;
+                    this.hippoAudio.load();
+                }
                 this.syncSfxMute();
                 this.resumeMusic();
             },
@@ -545,6 +553,7 @@
             syncSfxMute() {
                 if (this.eggCrackAudio) this.eggCrackAudio.muted = !sfxEnabled;
                 if (this.fireworksAudio) this.fireworksAudio.muted = !sfxEnabled;
+                if (this.hippoAudio) this.hippoAudio.muted = !sfxEnabled;
             },
             osc(f, d, t, v, rampF = 0) {
                 if (!audioCtx || !sfxEnabled) return;
@@ -592,12 +601,37 @@
                     s.play().catch(e => {});
                 } catch(e) {}
             },
-            monkeyDie(startAt = 0.15) {
+            monkeyDie(startAt = 0.2) {
                 if (!sfxEnabled) return;
                 try {
                     const s = new Audio('monkey sound.mp3');
                     s.volume = 0.45;
                     s.currentTime = startAt;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            oink() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('oink.mp3');
+                    s.volume = 0.45;
+                    s.currentTime = 0;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            batDie() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('bat.mp3');
+                    const baseVolume = 0.45;
+                    const fadeSeconds = 0.32;
+                    s.volume = baseVolume;
+                    s.currentTime = 0.02;
+                    s.addEventListener('timeupdate', () => {
+                        if (!Number.isFinite(s.duration) || s.duration <= fadeSeconds) return;
+                        const left = s.duration - s.currentTime;
+                        if (left < fadeSeconds) s.volume = baseVolume * Math.max(0, left / fadeSeconds);
+                    });
                     s.play().catch(e => {});
                 } catch(e) {}
             },
@@ -620,6 +654,15 @@
                     s.play().catch(e => {});
                 } catch(e) {}
             },
+            chewing() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('chewing.mp3');
+                    s.volume = 0.5;
+                    s.currentTime = 0;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
             fireworks() {
                 if (!sfxEnabled) return;
                 try {
@@ -637,6 +680,42 @@
                         this.fireworksAudio.pause();
                         this.fireworksAudio.currentTime = 0;
                     }
+                } catch(e) {}
+            },
+            stopHippo() {
+                try {
+                    if (this.hippoAudio) {
+                        this.hippoAudio.pause();
+                        this.hippoAudio.currentTime = 0;
+                        this.hippoAudio.volume = 0;
+                    }
+                } catch(e) {}
+            },
+            updateHippoLoop(lvl, pl, data, cameraX) {
+                try {
+                    const s = this.hippoAudio;
+                    if (!s || !sfxEnabled || state !== 'playing' || lvl !== 7 || !pl || !data || !data.enemies) {
+                        this.stopHippo();
+                        return;
+                    }
+                    const hippo = data.enemies.find(en => en.isHippo && !en.dead);
+                    if (!hippo) {
+                        this.stopHippo();
+                        return;
+                    }
+                    const hippoMid = hippo.x + hippo.w / 2;
+                    const playerMid = pl.x + pl.w / 2;
+                    const distance = Math.abs(playerMid - hippoMid);
+                    const closeness = 1 - clamp(distance / 900, 0, 1);
+                    const screenLeft = hippo.x - cameraX;
+                    const screenRight = hippo.x + hippo.w - cameraX;
+                    const screenPresence = clamp(screenRight / hippo.w, 0, 1) * clamp((W - screenLeft) / hippo.w, 0, 1);
+                    const hippoEatingPlayer = pl.eatenBy === hippo && (pl.eatenTimer > 0 || pl.eatenBurpTimer > 0 || pl.eatenBurpDone);
+                    const targetVolume = hippoEatingPlayer ? 0 : (0.04 + closeness * 0.66) * screenPresence;
+                    s.volume = lerp(s.volume || 0, targetVolume, 0.08);
+                    s.muted = !sfxEnabled;
+                    if (targetVolume > 0.005 && s.paused) s.play().catch(e => {});
+                    if (targetVolume <= 0.005 && s.volume <= 0.006) s.pause();
                 } catch(e) {}
             },
             win(isFinal) {
@@ -1002,6 +1081,7 @@
                         if (en.dead || en.waitingForItems) continue;
                         if (en.isHippo) continue;
                         if (isOverlap(b, en)) {
+                            if (en.requiresCrouchShot && !b.firedCrouching) continue;
                             if (b.isRpg) {
                                 en.hp = 0;
                                 spawnParticles(b.x + b.w / 2, b.y + b.h / 2, '#ffdd55', 22);
@@ -1018,7 +1098,9 @@
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
                                 if (en.isChicken) SND.chickenDie();
-                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.15);
+                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
+                                else if (en.isPig) SND.oink();
+                                else if (en.isBat) SND.batDie();
                                 else if (isPinkMonster(en)) SND.monsterWhistle();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -1532,7 +1614,7 @@
             // Enemies
             let enemies = [];
             if (lvl < 4) {
-                if (lvl !== 2) {
+                if (lvl === 1) {
                     const numEnemy = 3 + lvl * 2;
                     for (let i = 0; i < numEnemy; i++) {
                         const ex = rand(400, worldW - 400) | 0;
@@ -1546,7 +1628,7 @@
                             dir: 1, walkAnim: 0
                         });
                     }
-                } else {
+                } else if (lvl === 2) {
                     const chickenRuns = platforms.filter(p => p.y === groundY && p.w > 180 && p.x > 320 && p.x < worldW - 700);
                     const chickenCount = chickenRuns.length > 0 ? 12 : 0;
                     for (let i = 0; i < chickenCount; i++) {
@@ -1557,12 +1639,14 @@
                         const usableW = Math.max(40, p.w - 64);
                         const ex = clamp(p.x + 32 + usableW * ((slotIndex + 1) / (slotsOnRun + 1)), p.x + 20, p.x + p.w - 44) | 0;
                         enemies.push({
-                            x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                            x: ex, y: groundY - 25 + 5, w: 24, h: 25,
                             vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
                             vy: 0, onGround: false,
                             isChicken: true,
                             hp: 1, maxHp: 1, oneShot: true,
+                            requiresCrouchShot: true,
                             keepInEasy: true,
+                            groundSink: 11,
                             stunTimer: 0, dead: false,
                             patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
                             dir: 1, walkAnim: rand(0, Math.PI * 2)
@@ -1623,6 +1707,11 @@
                 door.x = worldW - door.w - 24;
                 door.finalDoor = true;
             }
+            if (lvl === 3) {
+                const bossPlatformY = isEasyMode() ? easyPlatformY : 210;
+                platforms.push({ x: doorX - 600, y: bossPlatformY, w: 135, h: 14, type: 'sand' });
+                platforms.push({ x: doorX - 405, y: bossPlatformY, w: 135, h: 14, type: 'sand' });
+            }
 
             if (lvl === 1) {
                 enemies.push({
@@ -1668,19 +1757,36 @@
             }
 
             if (lvl === 3) {
-                const batCount = isEasyMode() ? 4 : 8;
-                for (let i = 0; i < batCount; i++) {
-                    const segment = (worldW - 800) / batCount;
-                    const ex = (500 + i * segment + Math.random() * segment) | 0;
-                    const ey = isEasyMode() ? easyFlyingY() : (rand(H - 350, H - 200) | 0);
+                for (let i = 0; i < 5; i++) {
+                    const segment = (doorX - 950) / 5;
+                    const ex = (900 + i * segment + Math.random() * Math.max(70, segment - 110)) | 0;
+                    const ey = groundY - 38;
                     enemies.push({
                         x: ex, y: ey, baseY: ey, w: 24, h: 20,
-                        vx: (Math.random() < 0.5 ? 1 : -1) * 1.5,
-                        vy: 0, onGround: false, isBat: true, chasePlayer: true,
+                        vx: -1.2, flySpeed: 1.2,
+                        vy: 0, onGround: false, isBat: true, leftOnly: true,
+                        hp: 1, maxHp: 1,
+                        keepInEasy: true,
+                        stunTimer: 0, dead: false,
+                        patrolX0: 0, patrolX1: ex,
+                        dir: -1, walkAnim: rand(0, Math.PI * 2)
+                    });
+                }
+
+                const batCount = isEasyMode() ? 5 : 9;
+                for (let i = 0; i < batCount; i++) {
+                    const segment = (worldW - 800) / batCount;
+                    const ex = (700 + i * segment + Math.random() * Math.max(80, segment - 100)) | 0;
+                    const platformBatY = isEasyMode() ? easyPlatformY : 210;
+                    const ey = platformBatY - 38;
+                    enemies.push({
+                        x: ex, y: ey, baseY: ey, w: 24, h: 20,
+                        vx: -1.35, flySpeed: 1.35,
+                        vy: 0, onGround: false, isBat: true, leftOnly: true,
                         hp: 1, maxHp: 1,
                         stunTimer: 0, dead: false,
-                        patrolX0: ex - 200, patrolX1: ex + 200,
-                        dir: 1, walkAnim: rand(0, Math.PI * 2)
+                        patrolX0: 0, patrolX1: ex,
+                        dir: -1, walkAnim: rand(0, Math.PI * 2)
                     });
                 }
 
@@ -1692,6 +1798,10 @@
                     stunTimer: 0, dead: false,
                     patrolX0: doorX - 250, patrolX1: doorX,
                     dir: 1, walkAnim: 0,
+                    maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 93,
+                    verticalDriftRange: 95,
+                    verticalDriftSpeed: 0.012,
+                    verticalDriftPhase: rand(0, Math.PI * 2),
                     waitingForItems: true
                 });
             }
@@ -1699,17 +1809,20 @@
                 const pigCount = 7;
                 const pigEndX = doorX - 680;
                 for (let i = 0; i < pigCount; i++) {
-                    const segment = (pigEndX - 500) / pigCount;
-                    const ex = (450 + i * segment + Math.random() * Math.max(60, segment - 40)) | 0;
+                    const pigStartX = 780;
+                    const segment = (pigEndX - pigStartX) / pigCount;
+                    const ex = (pigStartX + i * segment + Math.random() * Math.max(60, segment - 40)) | 0;
                     const ey = isEasyMode() ? (rand(H - 240, H - 210) | 0) : (rand(H - 360, H - 210) | 0);
                     enemies.push({
                         x: ex, y: ey, baseY: ey, w: 34, h: 26,
-                        vx: (Math.random() < 0.5 ? 1 : -1) * 1.15,
+                        vx: 0,
                         vy: 0, onGround: false, isPig: true,
+                        waitForScreen: true,
                         shootCooldown: rand(35, 120) | 0,
                         hp: 2, maxHp: 2, dead: false,
                         patrolX0: ex - 180, patrolX1: ex + 180,
-                        dir: 1, walkAnim: rand(0, Math.PI * 2)
+                        dir: 1, walkAnim: rand(0, Math.PI * 2),
+                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74
                     });
                 }
 
@@ -1722,6 +1835,7 @@
                     hp: 22, maxHp: 22, stompDropsHp: 4, dead: false,
                     patrolX0: doorX - 460, patrolX1: doorX - 30,
                     dir: 1, walkAnim: 0,
+                    maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74,
                     waitingForItems: true
                 });
             }
@@ -1745,11 +1859,13 @@
                     const p = level6ChickenRuns[i];
                     const ex = clamp(p.x + rand(35, Math.max(40, p.w - 59)), p.x + 20, p.x + p.w - 44) | 0;
                     enemies.push({
-                        x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                        x: ex, y: groundY - 25 + 5, w: 24, h: 25,
                         vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
                         vy: 0, onGround: false,
                         isChicken: true,
                         hp: 1, maxHp: 1, oneShot: true,
+                        requiresCrouchShot: true,
+                        groundSink: 11,
                         stunTimer: 0, dead: false,
                         patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
                         dir: 1, walkAnim: rand(0, Math.PI * 2)
@@ -1757,17 +1873,20 @@
                 }
                 // More fliers - half bats and half flying pigs
                 for (let i = 0; i < 12; i++) {
-                    const ex = rand(500, worldW - 600) | 0;
+                    const segment = (worldW - 1200) / 12;
+                    const ex = (600 + i * segment + Math.random() * Math.max(70, segment - 90)) | 0;
                     const ey = isEasyMode() ? easyFlyingY() : (rand(H - 350, H - 180) | 0);
                     const isPig = i >= 6;
                     enemies.push({
                         x: ex, y: ey, baseY: ey, w: isPig ? 34 : 24, h: isPig ? 26 : 20,
-                        vx: (Math.random() < 0.5 ? 1 : -1) * (isPig ? 1.15 : 1.5),
+                        vx: isPig ? 0 : (Math.random() < 0.5 ? 1 : -1) * 1.5,
                         vy: 0, onGround: false, isBat: !isPig, isPig: isPig, chasePlayer: !isPig,
+                        waitForScreen: isPig,
                         shootCooldown: isPig ? (rand(45, 140) | 0) : 0,
                         hp: isPig ? 2 : 1, maxHp: isPig ? 2 : 1, dead: false,
                         patrolX0: ex - 200, patrolX1: ex + 200,
-                        dir: 1, walkAnim: rand(0, Math.PI * 2)
+                        dir: 1, walkAnim: rand(0, Math.PI * 2),
+                        maxFlightY: isPig ? (isEasyMode() ? easyPlatformY : 210) - 74 : undefined
                     });
                 }
                 // Extra coins for the final boss gauntlet.
@@ -1831,6 +1950,7 @@
                     hp: 24, maxHp: 24, stompDropsHp: 5, dead: false,
                     patrolX0: doorX - 470, patrolX1: doorX - 25,
                     dir: 1, walkAnim: 0, waitingForItems: true,
+                    maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74,
                     bossOrder: 5
                 });
             }
@@ -1871,11 +1991,12 @@
                     const p = groundRuns[Math.max(0, groundRuns.length - 1 - i)];
                     const ex = clamp(p.x + rand(35, Math.max(40, p.w - 59)), p.x + 20, p.x + p.w - 44) | 0;
                     enemies.push({
-                        x: ex, y: groundY - 25 - 3, w: 24, h: 25,
+                        x: ex, y: groundY - 25 + 5, w: 24, h: 25,
                         vx: -1.0,
                         vy: 0, onGround: false,
                         isChicken: true,
                         oneShot: true,
+                        groundSink: 11,
                         hp: 1, maxHp: 1,
                         stunTimer: 0, dead: false,
                         patrolX0: p.x + 16, patrolX1: p.x + p.w - 40,
@@ -1904,13 +2025,14 @@
                     const ey = rand(H - 340, H - 220) | 0;
                     enemies.push({
                         x: ex, y: ey, baseY: ey, w: 34, h: 26,
-                        vx: 0, flySpeed: rand(0.8, 1.25),
+                        vx: 0, flySpeed: 0.72,
                         vy: 0, onGround: false, isPig: true, leftOnly: true,
                         shootCooldown: rand(45, 130) | 0,
                         hp: 1, maxHp: 1, oneShot: true,
                         stunTimer: 0, dead: false,
                         patrolX0: 0, patrolX1: ex,
-                        dir: -1, walkAnim: rand(0, Math.PI * 2)
+                        dir: -1, walkAnim: rand(0, Math.PI * 2),
+                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74
                     });
                 }
             }
@@ -3174,6 +3296,13 @@
             if (level === 7) {
                 levelIntroTimer = -1;
                 levelIntroLines = T('level7Intro');
+            } else if (level === 2) {
+                levelIntroTimer = 360;
+                levelIntroLines = [
+                    'Chickens are low and',
+                    'so are their standards.',
+                    'Press ↓ to crouch.'
+                ];
             } else {
                 levelIntroTimer = 0;
                 levelIntroLines = [];
@@ -3226,6 +3355,7 @@
                     updateParticles();
                     updateFloatingTexts();
                     updateBullets(enemies, pl, true);
+                    SND.updateHippoLoop(level, pl, ld, cam);
                     updateHUD(pl);
                     return;
                 }
@@ -3254,6 +3384,7 @@
                     updateParticles();
                     updateFloatingTexts();
                     updateBullets(enemies, pl, true);
+                    SND.updateHippoLoop(level, pl, ld, cam);
                     updateHUD(pl);
                     return;
                 }
@@ -3319,7 +3450,7 @@
                             if (level === MAX_LEVELS) {
                                 SND.stopMusic();
                                 SND.fireworks();
-                            } else SND.pauseMusic();
+                            }
                         }
                     }
                 }
@@ -3377,7 +3508,7 @@
                     const bX = pl.isCrouching 
                         ? pl.x + (pl.dir > 0 ? pl.w + (isRpg ? 36 : 34) : (isRpg ? -44 : -34)) 
                         : pl.x + (pl.dir > 0 ? pl.w + (isRpg ? 36 : 28) : (isRpg ? -44 : -36));
-                    bullets.push({ x: bX, y: bY, vx: pl.dir * (isRpg ? 6 : 8), w: isRpg ? 22 : 8, h: isRpg ? 10 : 4, life: isRpg ? 95 : 60, isRpg });
+                    bullets.push({ x: bX, y: bY, vx: pl.dir * (isRpg ? 6 : 8), w: isRpg ? 22 : 8, h: isRpg ? 10 : 4, life: isRpg ? 95 : 60, isRpg, firedCrouching: pl.isCrouching });
                     spawnParticles(bX, bY, isRpg ? '#ff8844' : '#ffffaa', isRpg ? 8 : 4);
                     SND.shoot();
                 }
@@ -3421,6 +3552,10 @@
                                 en.bigEyeCooldown = rand(360, 900) | 0;
                             }
                         }
+                    }
+                    if (en.isPig && en.waitForScreen && !en.screenMoveActive) {
+                        if (en.x < cam + W + 120) en.screenMoveActive = true;
+                        en.vx = en.screenMoveActive ? -0.72 : 0;
                     }
                     if (!en.swoopAbovePlayer) en.x += en.vx;
                     if (en.isHippo) {
@@ -3492,6 +3627,11 @@
                                 if (Math.abs(dx) < 190) en.vx += Math.sign(dx) * enemySpeed(0.035);
                                 en.vx = clamp(en.vx, en.isBig ? -enemySpeed(1.8) : -enemySpeed(1.45), en.isBig ? enemySpeed(1.8) : enemySpeed(1.45));
                             }
+                            if (!en.isBig) en.vx = en.waitForScreen && !en.screenMoveActive ? 0 : -0.72;
+                        } else if (en.leftOnly) {
+                            if (!en.leftOnlyActive && en.x < cam + W + 120) en.leftOnlyActive = true;
+                            en.vx = en.leftOnlyActive ? -Math.abs(en.flySpeed || 1.0) : 0;
+                            if (en.x + en.w < cam - 80) en.dead = true;
                         } else if (en.chasePlayer) {
                             const dx = pl.x - en.x, dy = pl.y - en.baseY;
                             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -3509,7 +3649,14 @@
                                 if (Math.abs(dx) < 60 && Math.abs(dy) < 60) { en.aiState = 'retreat'; en.aiTimer = 60; }
                             }
                         }
-                        en.y = en.baseY + Math.sin(en.walkAnim) * (en.swoopAbovePlayer ? 8 : (en.doorPatrol ? 10 : 20));
+                        if (typeof en.verticalDriftRange === 'number' && typeof en.maxFlightY === 'number') {
+                            const drift = (1 - Math.cos(t * (en.verticalDriftSpeed || 0.012) + (en.verticalDriftPhase || 0))) * 0.5 * en.verticalDriftRange;
+                            en.baseY = en.maxFlightY + drift;
+                        } else if (typeof en.maxFlightY === 'number') {
+                            en.baseY = Math.max(en.baseY, en.maxFlightY);
+                        }
+                        en.y = en.baseY + Math.sin(en.walkAnim) * (en.verticalDriftRange ? 3 : (en.swoopAbovePlayer ? 8 : (en.doorPatrol ? 10 : 20)));
+                        if (typeof en.maxFlightY === 'number') en.y = Math.max(en.y, en.maxFlightY);
                         en.dir = en.vx > 0 ? 1 : -1;
                         if (en.isPig) {
                             if (en.shootCooldown > 0) en.shootCooldown--;
@@ -3533,7 +3680,7 @@
                         else if ((!en.isMonkey && !en.isBat && !en.isBig) || en.hoverAboveGround) {
                             // Pink monsters and monster bosses hover/float 3px above the ground line.
                             en.vy = 0;
-                            en.y = (H - 40) - en.h - 3;
+                            en.y = (H - 40) - en.h - 3 + (en.groundSink || 0);
                             en.onGround = true;
                         } else { 
                             en.vy = Math.min(en.vy + 0.55, 16); 
@@ -3590,7 +3737,7 @@
                             }
                         }
                     }
-                    if (!en.isHippo && !en.leftOnly && !en.chasePlayer && !en.hitAndRun && !en.swoopAbovePlayer && !en.doorPatrol) if (en.x < en.patrolX0 || en.x > en.patrolX1) en.vx *= -1;
+                    if (!en.isHippo && !en.isPig && !en.leftOnly && !en.chasePlayer && !en.hitAndRun && !en.swoopAbovePlayer && !en.doorPatrol) if (en.x < en.patrolX0 || en.x > en.patrolX1) en.vx *= -1;
                     en.x = clamp(en.x, 0, worldW - en.w);
                     if (en.stunTimer > 0) en.stunTimer--;
 
@@ -3607,6 +3754,7 @@
                             pl.vx = 0;
                             pl.vy = 0;
                             en.chompTimer = 60;
+                            SND.chewing();
                             spawnParticles(pl.x + pl.w / 2, pl.y + pl.h / 2, '#ffccaa', 20);
                             return;
                         }
@@ -3618,7 +3766,9 @@
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
                                 if (en.isChicken) SND.chickenDie();
-                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.15);
+                                else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
+                                else if (en.isPig) SND.oink();
+                                else if (en.isBat) SND.batDie();
                                 else if (isPinkMonster(en)) SND.monsterWhistle();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -3697,6 +3847,7 @@
             updateFloatingTexts();
             if (levelIntroTimer > 0) levelIntroTimer--;
             if (ld && ld.enemies) updateBullets(ld.enemies, player);
+            SND.updateHippoLoop(level, player, ld, cam);
             updateHUD(player);
         }
 
@@ -3914,6 +4065,7 @@
                 
                 if (paused) {
                     SND.pauseMusic();
+                    SND.stopHippo();
                     ov.style.display = 'flex';
                     startBtn.style.display = 'none';
                     difficultyPanel.style.display = 'none';
@@ -3940,8 +4092,8 @@
                         level++;
                         initLevel();
                         state = 'playing';
-                        SND.stopMusic(); SND.resumeMusic();
                     } else {
+                        SND.stopFireworks();
                         level = 1; enemiesKilled = 0;
                         globalHasSword = false; globalHasGun = true;
                         initLevel();
@@ -3957,6 +4109,7 @@
         document.getElementById('menuBtn').addEventListener('click', () => {
             paused = false;
             SND.stopFireworks();
+            SND.stopHippo();
             state = 'menu';
             document.getElementById('overlay').style.display = 'flex';
             document.getElementById('startBtn').style.display = 'block';
