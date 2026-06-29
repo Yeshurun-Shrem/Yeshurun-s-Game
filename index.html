@@ -92,6 +92,7 @@
             color: #111;
             border: none;
             border-radius: 4px;
+            width: 190px;
             padding: 12px 30px;
             font-family: 'Press Start 2P', monospace;
             font-size: 12px;
@@ -208,6 +209,34 @@
         #sfxToggleBtn {
             left: 78px;
         }
+        #musicVolumeControl {
+            position: absolute;
+            top: 70px;
+            left: 16px;
+            z-index: 100;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            color: #fff4c0;
+            font-size: 8px;
+            text-shadow: 2px 2px #000;
+            background: rgba(0,0,0,0.34);
+            border: 1px solid rgba(255,215,0,0.35);
+            border-radius: 4px;
+            padding: 7px 8px;
+        }
+        #musicVolumeControl.open {
+            display: flex;
+        }
+        #musicVolumeSlider {
+            width: 112px;
+            accent-color: #ffd700;
+            cursor: pointer;
+        }
+        #musicVolumeValue {
+            min-width: 32px;
+            text-align: right;
+        }
         .audioIconBtn:hover {
             background: rgba(255,255,255,0.22);
             border-color: rgba(255,215,0,0.8);
@@ -256,6 +285,8 @@
         body.lang-he #startBtn,
         body.lang-he #resumeBtn,
         body.lang-he #menuBtn,
+        body.lang-he #controlsBtn,
+        body.lang-he #controlsBackBtn,
         body.lang-he .difficultyBtn,
         body.lang-he #difficultyLabel {
             font-size: 14px; /* Bigger for Hebrew letters */
@@ -282,8 +313,67 @@
             background: linear-gradient(135deg, #ff4455, #aa0000);
             box-shadow: 0 0 20px #ff445588;
         }
+        #controlsBtn {
+            background: linear-gradient(135deg, #ffd700, #ff8800);
+            color: #111;
+            width: 190px;
+            box-shadow: 0 0 20px #ffd70088;
+        }
+        #overlay.pause-mode #controlsBtn {
+            width: 250px;
+        }
+        #overlay.pause-mode #resumeBtn {
+            order: 1;
+        }
+        #overlay.pause-mode #controlsBtn {
+            order: 2;
+        }
+        #overlay.pause-mode #menuBtn {
+            order: 3;
+        }
+        #controlsBackBtn {
+            background: linear-gradient(135deg, #ffd700, #ff8800);
+            color: #111;
+            box-shadow: 0 0 20px #ffd70088;
+        }
         .btn-pause:hover {
             transform: scale(1.05);
+        }
+
+        #controlsPanel {
+            display: none;
+            width: min(680px, 88%);
+            color: #fff4c0;
+            text-align: center;
+            line-height: 1.8;
+        }
+        #controlsPanel h2 {
+            color: #d6c2a3;
+            font-size: 16px;
+            margin-bottom: 16px;
+            text-shadow: 0 0 14px rgba(120,95,65,0.8);
+        }
+        .controlsGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+        .controlsBox {
+            border: 2px solid rgba(255,215,0,0.35);
+            background: rgba(0,0,0,0.45);
+            border-radius: 6px;
+            padding: 14px;
+        }
+        .controlsBox h3 {
+            color: #ffd700;
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+        .controlsBox p {
+            color: #f4f0d0;
+            font-size: 8px;
+            line-height: 2;
         }
 
 
@@ -308,7 +398,13 @@
             <button id="musicToggleBtn" class="audioIconBtn" type="button" title="Music">🎵</button>
             <button id="sfxToggleBtn" class="audioIconBtn" type="button" title="Sounds">🔊</button>
             <h1 id="menuTitle">🎮 Yeshurun's Game 🎮</h1>
+            <label id="musicVolumeControl">
+                <span id="musicVolumeLabel">Music</span>
+                <input id="musicVolumeSlider" type="range" min="0" max="100" value="30">
+                <span id="musicVolumeValue">30%</span>
+            </label>
             <button id="startBtn">Start Game</button>
+            <button id="controlsBtn" class="btn-pause" type="button">Controls</button>
             <div id="difficultyPanel">
                 <div id="difficultyLabel">Difficulty</div>
                 <div id="difficultyOptions">
@@ -318,6 +414,20 @@
             </div>
             <button id="resumeBtn" class="btn-pause" style="display:none;">Return to Game</button>
             <button id="menuBtn" class="btn-pause" style="display:none;">Back to Menu</button>
+            <div id="controlsPanel">
+                <h2 id="controlsPanelTitle">Controls</h2>
+                <div class="controlsGrid">
+                    <div class="controlsBox">
+                        <h3 id="keyboardControlsTitle">Keyboard</h3>
+                        <p id="keyboardControlsText"></p>
+                    </div>
+                    <div class="controlsBox">
+                        <h3 id="gamepadControlsTitle">Controller</h3>
+                        <p id="gamepadControlsText"></p>
+                    </div>
+                </div>
+                <button id="controlsBackBtn" class="btn-pause" type="button">Back</button>
+            </div>
         </div>
     </div>
 
@@ -326,6 +436,7 @@
         let lang = 'en';
         let currentDifficulty = 'easy';
         let musicEnabled = true;
+        let musicVolume = 0.3;
         let sfxEnabled = true;
         const isEasyMode = () => currentDifficulty === 'easy';
         const easyThirdLess = (value) => isEasyMode() ? Math.max(1, Math.ceil(value * 2 / 3)) : value;
@@ -338,14 +449,20 @@
             if (lvl >= 3 && lvl <= 5) return base;
             return easyThirdLess(base);
         }
-        function applyDifficultyToEnemies(enemies) {
+        function applyDifficultyToEnemies(enemies, lvl) {
             if (!isEasyMode()) return enemies;
             let regularEnemyIndex = 0;
+            let extraEasyRegularEnemies = lvl === 6 ? 5 : 3;
             const tuned = enemies.filter(en => {
                 const removable = !en.isBig && !en.isHippo && !en.waitingForItems && !en.keepInEasy;
                 if (!removable) return true;
                 regularEnemyIndex++;
-                return regularEnemyIndex % 3 !== 0;
+                if (regularEnemyIndex % 3 !== 0) return true;
+                if (extraEasyRegularEnemies > 0) {
+                    extraEasyRegularEnemies--;
+                    return true;
+                }
+                return false;
             });
             for (const en of tuned) {
                 if (typeof en.vx === 'number') en.vx *= 3 / 4;
@@ -384,7 +501,7 @@
                 bossAppeared: 'Boss appeared!',
                 collectGun: 'Collect the gun to advance',
                 gunHint: 'Press SPACE to use the gun',
-                itemsLeft: (n) => `${n} coins to meet the ${level === MAX_LEVELS ? 'bosses' : 'boss'}`,
+                itemsLeft: (n) => level === MAX_LEVELS ? `${n} coins to open the door` : `${n} coins to meet the boss`,
                 hippoHint: 'The hippo cannot be killed - run!',
                 killBoss: 'Defeat the boss to continue',
                 killBossFinal: 'Defeat the bosses to win',
@@ -398,6 +515,13 @@
                 unpause: 'Press ESC to resume',
                 resumeBtn: 'Return to Game',
                 backToMenu: 'Back to Menu',
+                controlsBtn: 'Controls',
+                controlsBack: 'Back',
+                controlsTitle: 'Controls',
+                keyboardControlsTitle: 'Keyboard',
+                gamepadControlsTitle: 'Controller',
+                keyboardControlsText: 'Move: ← → / A D<br>Jump: ↑ / W<br>Crouch: ↓ / S<br>Shoot: SPACE / X<br>Pause: ESC',
+                gamepadControlsText: 'Move: Left stick / D-pad<br>Jump: A<br>Crouch: Down / LT<br>Shoot: X / B / RB / RT<br>Pause: Start',
                 cheatGun: 'Cheat: Gun activated!',
                 cheatHp: 'Cheat: Max Health!',
                 goDoor: 'Go through the door to complete the level',
@@ -434,6 +558,13 @@
                 unpause: 'לחץ ESC כדי להמשיך',
                 resumeBtn: 'חזור למשחק',
                 backToMenu: 'חזרה לתפריט הראשי',
+                controlsBtn: 'מקשים',
+                controlsBack: 'חזרה',
+                controlsTitle: 'מקשים',
+                keyboardControlsTitle: 'מקלדת',
+                gamepadControlsTitle: 'שלט',
+                keyboardControlsText: 'תנועה: ← → / A D<br>קפיצה: ↑ / W<br>זחילה: ↓ / S<br>ירי: רווח / X<br>עצירה: ESC',
+                gamepadControlsText: 'תנועה: סטיק שמאלי / D-pad<br>קפיצה: A<br>זחילה: למטה / LT<br>ירי: X / B / RB / RT<br>עצירה: Start',
                 cheatGun: "צ'יט: אקדח פעיל!",
                 cheatHp: "צ'יט: חיים מלאים!",
             }
@@ -466,6 +597,13 @@
             updateAudioButtons();
             document.getElementById('menuBtn').textContent = T('backToMenu');
             document.getElementById('resumeBtn').textContent = T('resumeBtn');
+            document.getElementById('controlsBtn').textContent = T('controlsBtn');
+            document.getElementById('controlsBackBtn').textContent = T('controlsBack');
+            document.getElementById('controlsPanelTitle').textContent = T('controlsTitle');
+            document.getElementById('keyboardControlsTitle').textContent = T('keyboardControlsTitle');
+            document.getElementById('gamepadControlsTitle').textContent = T('gamepadControlsTitle');
+            document.getElementById('keyboardControlsText').innerHTML = T('keyboardControlsText');
+            document.getElementById('gamepadControlsText').innerHTML = T('gamepadControlsText');
             document.getElementById('hud-level-label').textContent = T('hudLevel');
             document.getElementById('hud-enemies-label').textContent = T('hudEnemies');
             // Show the flag of the OTHER language (clicking switches to it)
@@ -479,11 +617,12 @@
         function updateAudioButtons() {
             const musicBtn = document.getElementById('musicToggleBtn');
             const sfxBtn = document.getElementById('sfxToggleBtn');
+            const musicVisuallyOff = !musicEnabled || musicVolume <= 0;
             musicBtn.textContent = musicEnabled ? '🎵' : '🎵';
             sfxBtn.textContent = sfxEnabled ? '🔊' : '🔇';
-            musicBtn.title = T(musicEnabled ? 'musicOn' : 'musicOff');
+            musicBtn.title = T(musicVisuallyOff ? 'musicOff' : 'musicOn');
             sfxBtn.title = T(sfxEnabled ? 'soundsOn' : 'soundsOff');
-            musicBtn.classList.toggle('off', !musicEnabled);
+            musicBtn.classList.toggle('off', musicVisuallyOff);
             sfxBtn.classList.toggle('off', !sfxEnabled);
         }
         function setMusicEnabled(enabled) {
@@ -493,6 +632,24 @@
             else if (state === 'playing' && !paused) SND.resumeMusic();
             updateAudioButtons();
         }
+        function setMusicVolume(volume) {
+            musicVolume = Math.max(0, Math.min(1, volume));
+            if (SND.applyMusicVolume) SND.applyMusicVolume();
+            updateMusicVolumeControl();
+        }
+        function updateMusicVolumeControl() {
+            const slider = document.getElementById('musicVolumeSlider');
+            const value = document.getElementById('musicVolumeValue');
+            if (!slider || !value) return;
+            const percent = Math.round(musicVolume * 100);
+            slider.value = String(percent);
+            value.textContent = `${percent}%`;
+            updateAudioButtons();
+        }
+        function toggleMusicVolumeControl() {
+            const control = document.getElementById('musicVolumeControl');
+            if (control) control.classList.toggle('open');
+        }
         function setSfxEnabled(enabled) {
             sfxEnabled = enabled;
             if (SND.syncSfxMute) SND.syncSfxMute();
@@ -500,13 +657,15 @@
         }
         applyLangToMenu(); // set initial state on page load
         setDifficulty(currentDifficulty);
+        updateMusicVolumeControl();
         document.getElementById('langBtn').addEventListener('click', () => {
             lang = lang === 'en' ? 'he' : 'en';
             applyLangToMenu();
         });
         document.getElementById('difficultyEasyBtn').addEventListener('click', () => setDifficulty('easy'));
         document.getElementById('difficultyBrutalBtn').addEventListener('click', () => setDifficulty('brutal'));
-        document.getElementById('musicToggleBtn').addEventListener('click', () => setMusicEnabled(!musicEnabled));
+        document.getElementById('musicToggleBtn').addEventListener('click', toggleMusicVolumeControl);
+        document.getElementById('musicVolumeSlider').addEventListener('input', e => setMusicVolume(Number(e.target.value) / 100));
         document.getElementById('sfxToggleBtn').addEventListener('click', () => setSfxEnabled(!sfxEnabled));
  
         // ─── Audio System (Retro SFX) ──────────────────────────────────────────────────
@@ -522,9 +681,9 @@
                 if (!this.bgMusic) {
                     this.bgMusic = new Audio('soundtrackittai.mp3');
                     this.bgMusic.loop = true;
-                    this.bgMusic.volume = 0.3;
                     this.bgMusic.muted = !musicEnabled;
                 }
+                this.applyMusicVolume();
                 if (!this.eggCrackAudio) {
                     this.eggCrackAudio = new Audio('egg crack.mp3');
                     this.eggCrackAudio.preload = 'auto';
@@ -550,6 +709,7 @@
             pauseMusic() { if (this.bgMusic) this.bgMusic.pause(); },
             resumeMusic() { if (this.bgMusic && musicEnabled) this.bgMusic.play().catch(e => {}); },
             stopMusic() { if (this.bgMusic) { this.bgMusic.pause(); this.bgMusic.currentTime = 0; } },
+            applyMusicVolume() { if (this.bgMusic) this.bgMusic.volume = musicVolume; },
             syncSfxMute() {
                 if (this.eggCrackAudio) this.eggCrackAudio.muted = !sfxEnabled;
                 if (this.fireworksAudio) this.fireworksAudio.muted = !sfxEnabled;
@@ -592,12 +752,12 @@
                     s.play().catch(e => {});
                 } catch(e) {}
             },
-            monsterWhistle() {
+            monsterDead() {
                 if (!sfxEnabled) return;
                 try {
-                    const s = new Audio('monster whistle.mp3');
+                    const s = new Audio('monster dead.mp3');
                     s.volume = 0.45;
-                    s.currentTime = 0.15;
+                    s.currentTime = 0;
                     s.play().catch(e => {});
                 } catch(e) {}
             },
@@ -615,6 +775,24 @@
                 try {
                     const s = new Audio('oink.mp3');
                     s.volume = 0.45;
+                    s.currentTime = 0;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            lionRoar() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('lion roar.mp3');
+                    s.volume = 0.58;
+                    s.currentTime = 0;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            lionDie() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('oy vey.aac');
+                    s.volume = 0.58;
                     s.currentTime = 0;
                     s.play().catch(e => {});
                 } catch(e) {}
@@ -772,11 +950,45 @@
         // ─── Input ────────────────────────────────────────────────────────────────────
         const keys = {};
         let suppressSpaceShootUntilKeyup = false;
+        const gamepadInput = {
+            left: false, right: false, up: false, down: false,
+            jump: false, shoot: false, crouch: false,
+            confirmPressed: false, pausePressed: false, backPressed: false
+        };
+        let previousGamepadButtons = {};
+        function pollGamepad() {
+            const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+            const pad = pads.find(p => p.connected);
+            const deadZone = 0.35;
+            const pressed = (i) => !!(pad && pad.buttons[i] && pad.buttons[i].pressed);
+            const axis = (i) => pad && Math.abs(pad.axes[i] || 0) > deadZone ? pad.axes[i] : 0;
+
+            const buttons = {
+                a: pressed(0), b: pressed(1), x: pressed(2), y: pressed(3),
+                lb: pressed(4), rb: pressed(5), lt: pressed(6), rt: pressed(7),
+                back: pressed(8), start: pressed(9),
+                dUp: pressed(12), dDown: pressed(13), dLeft: pressed(14), dRight: pressed(15)
+            };
+            const leftX = axis(0);
+            const leftY = axis(1);
+
+            gamepadInput.left = leftX < -deadZone || buttons.dLeft;
+            gamepadInput.right = leftX > deadZone || buttons.dRight;
+            gamepadInput.up = leftY < -deadZone || buttons.dUp;
+            gamepadInput.down = leftY > deadZone || buttons.dDown;
+            gamepadInput.jump = buttons.a || buttons.dUp || leftY < -0.65;
+            gamepadInput.shoot = buttons.x || buttons.b || buttons.rb || buttons.rt;
+            gamepadInput.crouch = buttons.dDown || leftY > 0.65 || buttons.lt;
+            gamepadInput.confirmPressed = (buttons.a || buttons.start) && !(previousGamepadButtons.a || previousGamepadButtons.start);
+            gamepadInput.pausePressed = buttons.start && !previousGamepadButtons.start;
+            gamepadInput.backPressed = (buttons.b || buttons.back) && !(previousGamepadButtons.b || previousGamepadButtons.back);
+            previousGamepadButtons = buttons;
+        }
         document.addEventListener('keydown', e => {
             keys[e.code] = true;
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 
-            if (state === 'menu' && (e.code === 'Space' || e.code === 'Enter')) {
+            if (state === 'menu' && !isControlsScreenOpen() && (e.code === 'Space' || e.code === 'Enter')) {
                 startGame();
             }
 
@@ -814,7 +1026,7 @@
         const lerp = (a, b, t) => a + (b - a) * t;
         const rand = (a, b) => Math.random() * (b - a) + a;
         const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-        const isPinkMonster = (en) => !en.isMonkey && !en.isBat && !en.isPig && !en.isChicken && !en.isHippo;
+        const isPinkMonster = (en) => !en.isMonkey && !en.isBat && !en.isPig && !en.isChicken && !en.isHippo && !en.isLion;
 
         // ─── Color palette ────────────────────────────────────────────────────────────
         let PAL = {};
@@ -1009,9 +1221,9 @@
         // ─── Bullets & Guns ───────────────────────────────────────────────────────────
         let bullets = [];
         function spawnEnemyBullet(en, color = '#ffaa44', targetX = null, targetY = null, round = false) {
-            const bulletOffset = en.isPig ? en.h * 0.85 : (en.isBig ? en.h * 0.65 : (en.isMonkey ? en.h * 0.3 : 16));
+            const bulletOffset = en.isLion ? en.h * 0.39 - ((en.roarTimer || 0) > 0 ? 8 : 0) : (en.isPig ? en.h * 0.85 : (en.isBig ? en.h * 0.65 : (en.isMonkey ? en.h * 0.3 : 16)));
             const bulletY = en.y + bulletOffset;
-            const bx = en.isPig ? en.x + en.w / 2 - 4 : en.x + (en.dir > 0 ? en.w : -8);
+            const bx = en.isLion ? en.x + (en.dir > 0 ? en.w * 0.68 + 11 : en.w * 0.32 - 11) : (en.isPig ? en.x + en.w / 2 - 4 : en.x + (en.dir > 0 ? en.w : -8));
             let bvx = en.dir * (en.isBig ? 6 : 4);
             let bvy = 0;
 
@@ -1090,6 +1302,7 @@
                                 en.hp -= en.oneShot ? en.hp : 1;
                             }
                             en.stunTimer = 15;
+                            if (en.isLion) en.dramaTimer = 42;
                             spawnParticles(en.x + en.w / 2, en.y + en.h / 2, b.isRpg ? '#ff8844' : '#ffffaa', b.isRpg ? 16 : 6);
                             if (en.hp <= 0) {
                                 en.dead = true;
@@ -1101,7 +1314,8 @@
                                 else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
                                 else if (en.isPig) SND.oink();
                                 else if (en.isBat) SND.batDie();
-                                else if (isPinkMonster(en)) SND.monsterWhistle();
+                                else if (en.isLion) SND.lionDie();
+                                else if (isPinkMonster(en)) SND.monsterDead();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
                             } else { SND.hit(); }
@@ -1822,7 +2036,7 @@
                         hp: 2, maxHp: 2, dead: false,
                         patrolX0: ex - 180, patrolX1: ex + 180,
                         dir: 1, walkAnim: rand(0, Math.PI * 2),
-                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74
+                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 42
                     });
                 }
 
@@ -1855,9 +2069,13 @@
                     });
                 }
                 const level6ChickenRuns = platforms.filter(p => p.y === groundY && p.w > 180 && p.x > 420 && p.x < doorX - 700);
-                for (let i = 0; i < Math.min(2, level6ChickenRuns.length); i++) {
-                    const p = level6ChickenRuns[i];
-                    const ex = clamp(p.x + rand(35, Math.max(40, p.w - 59)), p.x + 20, p.x + p.w - 44) | 0;
+                const level6ChickenCount = level6ChickenRuns.length > 0 ? 7 : 0;
+                for (let i = 0; i < level6ChickenCount; i++) {
+                    const p = level6ChickenRuns[i % level6ChickenRuns.length];
+                    const slotsOnRun = Math.ceil((level6ChickenCount - (i % level6ChickenRuns.length)) / level6ChickenRuns.length);
+                    const slotIndex = Math.floor(i / level6ChickenRuns.length);
+                    const slotW = p.w / Math.max(1, slotsOnRun);
+                    const ex = clamp(p.x + slotW * slotIndex + slotW * 0.5 - 12, p.x + 20, p.x + p.w - 44) | 0;
                     enemies.push({
                         x: ex, y: groundY - 25 + 5, w: 24, h: 25,
                         vx: (Math.random() < 0.5 ? 1 : -1) * 1.0,
@@ -1886,7 +2104,7 @@
                         hp: isPig ? 2 : 1, maxHp: isPig ? 2 : 1, dead: false,
                         patrolX0: ex - 200, patrolX1: ex + 200,
                         dir: 1, walkAnim: rand(0, Math.PI * 2),
-                        maxFlightY: isPig ? (isEasyMode() ? easyPlatformY : 210) - 74 : undefined
+                        maxFlightY: isPig ? (isEasyMode() ? easyPlatformY : 210) - 42 : undefined
                     });
                 }
                 // Extra coins for the final boss gauntlet.
@@ -1896,62 +2114,15 @@
                     coinsArr.push(makeCoinAwayFromSign(400, worldW - 400, isEasyMode() ? H - 200 : H - 280, H - 150));
                 }
 
-                // Final bosses appear one after another.
-                // Boss 1: Monster, same setup as the Level 1 boss.
                 enemies.push({
-                    x: doorX - 350, y: groundY - 64 - 3, w: 56, h: 64,
-                    vx: -1.2, vy: 0, onGround: false,
-                    hp: 12, maxHp: 12, stompDropsHp: 4, isBig: true, hoverAboveGround: true,
-                    stunTimer: 0, dead: false, coughBoss: true, coughTimer: 0,
-                    enemyColor1: '#ff4455', enemyColor2: '#cc2233', enemyHeadColor: '#ff6677',
-                    patrolX0: doorX - 700, patrolX1: doorX - 150,
-                    dir: 1, walkAnim: 0,
-                    waitingForItems: true,
-                    bossOrder: 1
-                });
-                // Boss 2: Giant Chicken
-                enemies.push({
-                    x: doorX - 270, y: groundY - 62, w: 58, h: 62,
-                    vx: -1.2, vy: 0, onGround: false, isChicken: true, isBig: true,
-                    shootsEggs: true, shootCooldown: 120,
-                    hp: 22, maxHp: 22, stompDropsHp: 5, dead: false,
-                    patrolX0: doorX - 500, patrolX1: doorX - 80,
-                    dir: 1, walkAnim: 0, waitingForItems: true,
-                    bossOrder: 2
-                });
-                // Boss 3: Bat
-                enemies.push({
-                    x: doorX - 220, y: isEasyMode() ? H - 230 : H - 270, baseY: isEasyMode() ? H - 230 : H - 270, w: 48, h: 40,
-                    vx: 0, vy: 0, onGround: false, isBat: true, isBig: true, hitAndRun: true,
-                    aiState: 'retreat', aiTimer: 60,
-                    hp: 18, maxHp: 18, stompDropsHp: 5, dead: false,
-                    patrolX0: doorX - 500, patrolX1: doorX - 100,
-                    dir: 1, walkAnim: 0, waitingForItems: true,
-                    shootCooldown: 360,
-                    retreatY: isEasyMode() ? H - 230 : H - 260,
-                    bossOrder: 3
-                });
-                // Boss 4: Monkey
-                enemies.push({
-                    x: doorX - 100, y: groundY - 72, w: 44, h: 72,
-                    vx: 1.2, vy: 0, onGround: false,
-                    isMonkey: true, isBig: true, shootCooldown: 60,
-                    hp: 20, maxHp: 20, dead: false,
-                    patrolX0: doorX - 400, patrolX1: doorX,
-                    dir: -1, walkAnim: 0, waitingForItems: true,
-                    ghostMode: true, baseY: groundY - 72,
-                    bossOrder: 4
-                });
-                // Boss 5: Flying Pig
-                enemies.push({
-                    x: doorX - 150, y: isEasyMode() ? H - 235 : H - 305, baseY: isEasyMode() ? H - 235 : H - 305, w: 64, h: 48,
-                    vx: -1.05, vy: 0, onGround: false, isPig: true, isBig: true,
-                    shootCooldown: 90,
-                    hp: 24, maxHp: 24, stompDropsHp: 5, dead: false,
-                    patrolX0: doorX - 470, patrolX1: doorX - 25,
-                    dir: 1, walkAnim: 0, waitingForItems: true,
-                    maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74,
-                    bossOrder: 5
+                    x: doorX - 260, y: groundY - 76, w: 70, h: 76,
+                    vx: -1.35, vy: 0, onGround: false,
+                    isLion: true, isBig: true,
+                    hp: 34, maxHp: 34, stompDropsHp: 5, dead: false,
+                    stunTimer: 0, dramaTimer: 0, roarCooldown: 120,
+                    patrolX0: doorX - 650, patrolX1: doorX - 55,
+                    dir: -1, walkAnim: 0,
+                    waitingForItems: true
                 });
             }
 
@@ -2032,12 +2203,12 @@
                         stunTimer: 0, dead: false,
                         patrolX0: 0, patrolX1: ex,
                         dir: -1, walkAnim: rand(0, Math.PI * 2),
-                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 74
+                        maxFlightY: (isEasyMode() ? easyPlatformY : 210) - 42
                     });
                 }
             }
 
-            enemies = applyDifficultyToEnemies(enemies);
+            enemies = applyDifficultyToEnemies(enemies, lvl);
             return { worldW, platforms, spikes, coins: coinsArr, hearts: heartsArr, enemies, door, groundY, guns };
         }
 
@@ -2065,6 +2236,7 @@
                 eatenBy: null,
                 restartHP: null,
                 restartItems: null,
+                eatenCoinsLeft: null,
                 doorTargetX: 0,
                 doorOpenProgress: 0,
                 alpha: 1,
@@ -2563,7 +2735,104 @@
             const x = en.x - cam, y = en.y;
             ctx.save();
 
-            if (en.isHippo) {
+            if (en.isLion) {
+                const stunned = en.stunTimer > 0;
+                const roaring = (en.roarTimer || 0) > 0;
+                const dramatic = roaring || (en.dramaTimer || 0) > 0;
+                const step = dramatic ? 0 : Math.sin(en.walkAnim) * 5;
+                const d = en.dir >= 0 ? 1 : -1;
+                const bodyColor = stunned ? '#b88945' : '#c98b3a';
+                const maneColor = stunned ? '#6f3d24' : '#7b3f1f';
+                const faceX = x + (d > 0 ? en.w * 0.68 : en.w * 0.32) + (roaring ? d * 7 : 0);
+                const headLift = roaring ? 8 : 0;
+                const bodyDrop = roaring ? 3 : 0;
+                const bodyTilt = roaring ? -d * 0.08 : 0;
+
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath();
+                ctx.ellipse(x + en.w / 2, y + en.h + 3, en.w * 0.42, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = bodyColor;
+                ctx.beginPath();
+                ctx.ellipse(x + en.w * 0.48 - (roaring ? d * 2 : 0), y + en.h * 0.58 + bodyDrop, en.w * 0.4, en.h * 0.27, bodyTilt, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#8b5a2b';
+                const backLegX = d > 0 ? x + en.w * 0.18 : x + en.w * 0.65;
+                const midLegX = x + en.w * 0.43;
+                const frontLegX = d > 0 ? x + en.w * 0.65 : x + en.w * 0.18;
+                ctx.fillRect(backLegX, y + en.h * 0.72 + step + (roaring ? 5 : 0), en.w * 0.1, en.h * 0.28 - (roaring ? 5 : 0));
+                ctx.fillRect(midLegX, y + en.h * 0.72 - step + bodyDrop, en.w * 0.1, en.h * 0.28 - bodyDrop);
+                ctx.fillRect(frontLegX, y + en.h * 0.68 + (roaring ? 0 : step), en.w * 0.11, en.h * 0.32);
+                if (roaring) {
+                    ctx.fillRect(frontLegX + d * en.w * 0.12, y + en.h * 0.73, en.w * 0.1, en.h * 0.27);
+                }
+
+                ctx.strokeStyle = '#7b3f1f';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(x + (d > 0 ? en.w * 0.15 : en.w * 0.85), y + en.h * 0.48 + bodyDrop);
+                ctx.quadraticCurveTo(x + (d > 0 ? -8 : en.w + 8), y + en.h * 0.35 + bodyDrop, x + (d > 0 ? en.w * 0.04 : en.w * 0.96), y + en.h * 0.1 + bodyDrop);
+                ctx.stroke();
+
+                ctx.fillStyle = maneColor;
+                for (let i = 0; i < 11; i++) {
+                    const a = (Math.PI * 2 * i) / 11 + (dramatic ? 0.14 : Math.sin(t * 0.04) * 0.04);
+                    ctx.beginPath();
+                    ctx.ellipse(faceX + Math.cos(a) * 16, y + en.h * 0.34 - headLift + Math.sin(a) * 16, 9, 13, a, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.fillStyle = '#d99b4a';
+                ctx.beginPath();
+                ctx.arc(faceX, y + en.h * 0.34 - headLift, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#111';
+                ctx.fillRect(faceX + d * 4, y + en.h * 0.3 - headLift, 3, 3);
+                ctx.fillRect(faceX - d * 8, y + en.h * 0.3 - headLift, 3, 3);
+
+                ctx.fillStyle = '#5a2b20';
+                ctx.beginPath();
+                ctx.ellipse(faceX + d * 15, y + en.h * 0.39 - headLift, 8, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = dramatic ? '#ffffff' : '#3a1e16';
+                if (dramatic) {
+                    ctx.fillStyle = '#2a130f';
+                    ctx.beginPath();
+                    ctx.ellipse(faceX + d * 4, y + en.h * 0.515 - headLift, roaring ? 7 : 6, roaring ? 9 : 7, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(faceX + d * 4, y + en.h * 0.535 - headLift, roaring ? 7 : 7, 0.1, Math.PI - 0.1);
+                    ctx.stroke();
+                } else {
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(faceX - d * 3, y + en.h * 0.47);
+                    ctx.lineTo(faceX - d * 12, y + en.h * 0.5);
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = '#f8d84a';
+                ctx.beginPath();
+                const crownY = y + (dramatic ? en.h * 0.08 - headLift + 4 : en.h * 0.08);
+                ctx.moveTo(faceX - 16, crownY);
+                ctx.lineTo(faceX - 8, crownY - 12);
+                ctx.lineTo(faceX, crownY);
+                ctx.lineTo(faceX + 8, crownY - 12);
+                ctx.lineTo(faceX + 16, crownY);
+                ctx.lineTo(faceX + 12, crownY + 8);
+                ctx.lineTo(faceX - 12, crownY + 8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#8b6f18';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            } else if (en.isHippo) {
                 const stunned = en.stunTimer > 0;
                 const hippoEatSequence = player && player.eatenBy === en && (player.eatenTimer > 0 || player.eatenBurpTimer > 0 || player.eatenBurpDone);
                 const legAnim = hippoEatSequence && en.onGround ? 0 : Math.sin(en.walkAnim) * 5;
@@ -3262,12 +3531,15 @@
         let t = 0; // frame counter
         let levelIntroTimer = 0;
         let levelIntroLines = [];
+        let coinNeedCountUp = null;
 
-        function cloneCollectedItems() {
-            return {
-                coins: ld.coins.map(c => ({ ...c })),
-                deadEnemies: ld.enemies.map(e => !!e.dead)
-            };
+        function cloneEnemyState(en) {
+            return { ...en };
+        }
+
+        function resetEnemiesToLevelStart() {
+            if (!ld.initialEnemies) return;
+            ld.enemies = ld.initialEnemies.map(cloneEnemyState);
         }
 
         function initLevel(startHP = 5, preservedItems = null) {
@@ -3281,6 +3553,7 @@
                     });
                 }
             }
+            ld.initialEnemies = ld.enemies.map(cloneEnemyState);
             player = makePlayer();
             if (level === 7) {
                 player.x = 560;
@@ -3293,6 +3566,7 @@
             particles = [];
             floatingTexts = [];
             bullets = [];
+            coinNeedCountUp = null;
             if (level === 7) {
                 levelIntroTimer = -1;
                 levelIntroLines = T('level7Intro');
@@ -3309,15 +3583,23 @@
             }
         }
 
-        function restartLevelAfterDamage() {
-            const preservedItems = level === 7 ? cloneCollectedItems() : null;
-            player.hp--;
-            if (player.hp <= 0) {
-                player.dead = true;
-                state = 'dead';
-                return;
-            }
-            initLevel(player.hp, preservedItems);
+        function respawnPlayerAtLastSafeGround(pl, worldW, savedPoint = null) {
+            const respawnX = savedPoint ? savedPoint.x : pl.lastSafeGroundX - 20 * pl.dir;
+            const respawnY = savedPoint ? savedPoint.y : pl.lastSafeGroundY - 10;
+            pl.x = clamp(respawnX, 0, worldW - pl.w);
+            pl.y = respawnY;
+            pl.vx = 0;
+            pl.vy = 0;
+            pl.alpha = 1;
+            pl.invincible = 90;
+            pl.eatenTimer = 0;
+            pl.eatenBurpTimer = 0;
+            pl.eatenBurpDone = false;
+            pl.eatenBy = null;
+            pl.restartHP = null;
+            pl.restartItems = null;
+            pl.eatenCoinsLeft = null;
+            pl.enteringDoor = false;
         }
 
         // ─── Update ───────────────────────────────────────────────────────────────────
@@ -3378,12 +3660,30 @@
                             pl.dead = true;
                             state = 'dead';
                         } else {
-                            initLevel(restartHP, pl.restartItems);
+                            const previousCoinsLeft = pl.eatenCoinsLeft;
+                            ld.coins.forEach(coin => { coin.collected = false; });
+                            resetEnemiesToLevelStart();
+                            bullets = [];
+                            pl.hp = restartHP;
+                            if (ld.guns) ld.guns = ld.guns.filter(g => !g.burped);
+                            pl.isCrouching = false;
+                            pl.h = 51;
+                            pl.dir = 1;
+                            respawnPlayerAtLastSafeGround(pl, worldW, { x: 560, y: ld.groundY - pl.h - 10 });
+                            pl.lastOnGroundX = 560;
+                            pl.lastSafeGroundX = 560;
+                            cam = 0;
+                            const resetCoinsLeft = levelItemRequirement(level, ld.coins.length);
+                            if (previousCoinsLeft !== null && previousCoinsLeft < resetCoinsLeft) {
+                                coinNeedCountUp = { from: previousCoinsLeft, to: resetCoinsLeft, startT: t, framesPerStep: 4 };
+                            } else {
+                                coinNeedCountUp = null;
+                            }
                         }
                     }
                     updateParticles();
                     updateFloatingTexts();
-                    updateBullets(enemies, pl, true);
+                    updateBullets(ld.enemies, pl, true);
                     SND.updateHippoLoop(level, pl, ld, cam);
                     updateHUD(pl);
                     return;
@@ -3409,15 +3709,15 @@
                 }
 
                 // ── Player input ──
-                const speed = isEasyMode() ? 3.6 : 3.0;
+                const speed = isEasyMode() ? 3.45 : 2.88;
                 const jumpForce = isEasyMode() ? -12.2 : -10.5;
 
-                let isLeft = keys['ArrowLeft'] || keys['KeyA'];
-                let isRight = keys['ArrowRight'] || keys['KeyD'];
-                let isJump = keys['ArrowUp'] || keys['KeyW'];
+                let isLeft = keys['ArrowLeft'] || keys['KeyA'] || gamepadInput.left;
+                let isRight = keys['ArrowRight'] || keys['KeyD'] || gamepadInput.right;
+                let isJump = keys['ArrowUp'] || keys['KeyW'] || gamepadInput.jump;
                 let isAtk = keys['KeyZ'];
-                let isShoot = keys['KeyX'] || (keys['Space'] && !suppressSpaceShootUntilKeyup);
-                let isCrouch = keys['ArrowDown'] || keys['KeyS'];
+                let isShoot = keys['KeyX'] || gamepadInput.shoot || (keys['Space'] && !suppressSpaceShootUntilKeyup);
+                let isCrouch = keys['ArrowDown'] || keys['KeyS'] || gamepadInput.crouch;
 
                 if (pl.enteringDoor) {
                     isLeft = false;
@@ -3556,6 +3856,27 @@
                     if (en.isPig && en.waitForScreen && !en.screenMoveActive) {
                         if (en.x < cam + W + 120) en.screenMoveActive = true;
                         en.vx = en.screenMoveActive ? -0.72 : 0;
+                    }
+                    if (en.isLion) {
+                        if (en.roarTimer > 0) {
+                            en.roarTimer--;
+                            if (en.roarShotTimer > 0) {
+                                en.roarShotTimer--;
+                                if (en.roarShotTimer === 0) {
+                                    spawnEnemyBullet(en, '#f6c247', null, null, true);
+                                    spawnParticles(en.x + (en.dir > 0 ? en.w * 0.68 + 11 : en.w * 0.32 - 11), en.y + en.h * 0.39 - 8, '#f6c247', 18);
+                                }
+                            }
+                            en.vx = 0;
+                        } else if (en.dramaTimer > 0) {
+                            en.dramaTimer--;
+                            en.vx = 0;
+                        } else {
+                            const lionSpeed = enemySpeed(1.35);
+                            if (en.x <= en.patrolX0) en.vx = lionSpeed;
+                            else if (en.x + en.w >= en.patrolX1) en.vx = -lionSpeed;
+                            else en.vx = (en.vx >= 0 ? 1 : -1) * lionSpeed;
+                        }
                     }
                     if (!en.swoopAbovePlayer) en.x += en.vx;
                     if (en.isHippo) {
@@ -3703,10 +4024,19 @@
                                 }
                             }
                         }
-                        en.dir = en.stopAtLeftLedge ? -1 : (en.vx > 0 ? 1 : -1);
+                        en.dir = en.stopAtLeftLedge ? -1 : (en.isLion && en.vx === 0 ? en.dir : (en.vx > 0 ? 1 : -1));
                         en.walkAnim = (en.walkAnim || 0) + 0.15;
+                        if (en.isLion && !en.dead) {
+                            if (en.roarCooldown > 0) en.roarCooldown--;
+                            else if (en.x > cam - 80 && en.x < cam + W + 80) {
+                                en.roarTimer = 88;
+                                en.roarShotTimer = 16;
+                                SND.lionRoar();
+                                en.roarCooldown = enemyShootDelay(115);
+                            }
+                        }
                         if (!en.dead) {
-                            if (en.isMonkey || (en.isBig && (!en.isChicken || en.shootsEggs))) {
+                            if (!en.isLion && (en.isMonkey || (en.isBig && (!en.isChicken || en.shootsEggs)))) {
                                 if (en.shootCooldown > 0) en.shootCooldown--;
                                 else if (en.x > cam - 50 && en.x < cam + W + 50) {
                                     if (en.isMonkey) {
@@ -3737,7 +4067,7 @@
                             }
                         }
                     }
-                    if (!en.isHippo && !en.isPig && !en.leftOnly && !en.chasePlayer && !en.hitAndRun && !en.swoopAbovePlayer && !en.doorPatrol) if (en.x < en.patrolX0 || en.x > en.patrolX1) en.vx *= -1;
+                    if (!en.isLion && !en.isHippo && !en.isPig && !en.leftOnly && !en.chasePlayer && !en.hitAndRun && !en.swoopAbovePlayer && !en.doorPatrol) if (en.x < en.patrolX0 || en.x > en.patrolX1) en.vx *= -1;
                     en.x = clamp(en.x, 0, worldW - en.w);
                     if (en.stunTimer > 0) en.stunTimer--;
 
@@ -3750,7 +4080,7 @@
                             pl.eatenBy = en;
                             pl.eatenTimer = 60;
                             pl.restartHP = pl.hp;
-                            pl.restartItems = cloneCollectedItems();
+                            pl.eatenCoinsLeft = Math.max(0, levelItemRequirement(level, coinsArr.length) - coinsArr.filter(c => c.collected).length);
                             pl.vx = 0;
                             pl.vy = 0;
                             en.chompTimer = 60;
@@ -3769,10 +4099,11 @@
                                 else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
                                 else if (en.isPig) SND.oink();
                                 else if (en.isBat) SND.batDie();
-                                else if (isPinkMonster(en)) SND.monsterWhistle();
+                                else if (en.isLion) SND.lionDie();
+                                else if (isPinkMonster(en)) SND.monsterDead();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
-                            } else { en.stunTimer = 25; spawnParticles(en.x + en.w / 2, en.y, '#ff4455', 10); SND.hit(); }
+                            } else { en.stunTimer = 25; if (en.isLion) en.dramaTimer = 42; spawnParticles(en.x + en.w / 2, en.y, '#ff4455', 10); SND.hit(); }
                             pl.vy = -9; pl.jumpsLeft = 1;
                         } else if (pl.invincible === 0) {
                             pl.hp--; pl.invincible = 30; pl.vy = -7; pl.vx = pl.x > en.x ? 5 : -5;
@@ -3825,20 +4156,16 @@
 
                 if (pl.y > H + 60) {
                     if (level === 7) {
+                        pl.hp--;
                         SND.fall();
-                        restartLevelAfterDamage();
+                        if (pl.hp <= 0) state = 'dead';
+                        else respawnPlayerAtLastSafeGround(pl, worldW);
                         return;
                     }
                     pl.hp--; SND.fall(); if (pl.hp <= 0) state = 'dead';
                     else { 
                         // Respawn 20px before the pit (opposite to direction they were moving/facing)
-                        const respawnX = pl.lastSafeGroundX - 20 * pl.dir;
-                        const respawnY = pl.lastSafeGroundY - 10;
-                        pl.x = clamp(respawnX, 0, worldW - pl.w);
-                        pl.y = respawnY;
-                        pl.vy = 0;
-                        pl.vx = 0;
-                        pl.invincible = 90;
+                        respawnPlayerAtLastSafeGround(pl, worldW);
                     }
                 }
             }
@@ -3896,7 +4223,7 @@
                 const needed = Math.ceil(totalItems * 0.6);
                 const bossDead = ld.enemies.every(e => e.isHippo || !e.isBig || e.dead);
 
-                                ctx.save();
+                ctx.save();
                 ctx.font = (lang === 'he' ? '18px' : '14px') + ' "Press Start 2P"';
                 ctx.textAlign = 'center';
                 ctx.shadowOffsetX = 1;
@@ -3904,7 +4231,16 @@
                 const finalNeeded = levelItemRequirement(level, totalItems);
                 if (collected < finalNeeded) {
                     ctx.fillStyle = '#00eeff'; // Neon Cyan Diamond color
-                    ctx.fillText(T('itemsLeft', Math.max(0, finalNeeded - collected)), W / 2, 50);
+                    let displayedItemsLeft = Math.max(0, finalNeeded - collected);
+                    if (coinNeedCountUp && level === 7) {
+                        const animatedItemsLeft = Math.min(
+                            coinNeedCountUp.to,
+                            coinNeedCountUp.from + Math.floor((t - coinNeedCountUp.startT) / coinNeedCountUp.framesPerStep)
+                        );
+                        displayedItemsLeft = Math.min(animatedItemsLeft, displayedItemsLeft);
+                        if (animatedItemsLeft >= coinNeedCountUp.to) coinNeedCountUp = null;
+                    }
+                    ctx.fillText(T('itemsLeft', displayedItemsLeft), W / 2, 50);
                 } else if (!bossDead) {
                     ctx.fillStyle = '#ff4455';
                     const msg = (level === MAX_LEVELS) ? T('killBossFinal') : T('killBoss');
@@ -4032,12 +4368,15 @@
         // ─── Game loop ────────────────────────────────────────────────────────────────
         let raf = null;
         let paused = false;
+        let controlsReturnMode = 'menu';
         function loop() {
             try {
+                pollGamepad();
                 if (state === 'menu') {
                     raf = null;
                     return;
                 }
+                handleGamepadSystemInput();
                 ctx.clearRect(0, 0, W, H);
                 if (!paused) update();
                 if (state === 'win') t++;
@@ -4052,55 +4391,101 @@
             }
         }
 
+        function setControlsScreen(open, returnMode = controlsReturnMode) {
+            controlsReturnMode = returnMode;
+            const showControls = !!open;
+            document.getElementById('menuTitle').style.display = showControls ? 'none' : (returnMode === 'menu' ? 'block' : 'none');
+            document.getElementById('startBtn').style.display = showControls ? 'none' : (returnMode === 'menu' ? 'block' : 'none');
+            document.getElementById('difficultyPanel').style.display = showControls ? 'none' : (returnMode === 'menu' ? 'flex' : 'none');
+            document.getElementById('resumeBtn').style.display = showControls ? 'none' : (returnMode === 'pause' ? 'block' : 'none');
+            document.getElementById('menuBtn').style.display = showControls ? 'none' : (returnMode === 'pause' ? 'block' : 'none');
+            document.getElementById('controlsBtn').style.display = showControls ? 'none' : 'block';
+            document.getElementById('controlsPanel').style.display = showControls ? 'block' : 'none';
+        }
+
+        function isControlsScreenOpen() {
+            return document.getElementById('controlsPanel').style.display === 'block';
+        }
+
+        function togglePause() {
+            if (state !== 'playing') return;
+            paused = !paused;
+            const ov = document.getElementById('overlay');
+            const startBtn = document.getElementById('startBtn');
+            const menuBtn = document.getElementById('menuBtn');
+            const resumeBtn = document.getElementById('resumeBtn');
+            const difficultyPanel = document.getElementById('difficultyPanel');
+
+            if (paused) {
+                SND.stopHippo();
+                ov.classList.add('pause-mode');
+                ov.style.display = 'flex';
+                document.getElementById('menuTitle').style.display = 'none';
+                startBtn.style.display = 'none';
+                difficultyPanel.style.display = 'none';
+                menuBtn.style.display = 'block';
+                resumeBtn.style.display = 'block';
+                document.getElementById('controlsBtn').style.display = 'block';
+                document.getElementById('controlsPanel').style.display = 'none';
+                menuBtn.innerText = T('backToMenu');
+                resumeBtn.innerText = T('resumeBtn');
+                controlsReturnMode = 'pause';
+            } else {
+                ov.classList.remove('pause-mode');
+                SND.resumeMusic();
+                ov.style.display = 'none';
+            }
+        }
+
+        function advanceFromEndScreen() {
+            if (state === 'dead') {
+                suppressSpaceShootUntilKeyup = true;
+                enemiesKilled = 0;
+                initLevel(5);
+                state = 'playing';
+                SND.stopMusic(); SND.resumeMusic();
+            } else if (state === 'win') {
+                suppressSpaceShootUntilKeyup = true;
+                if (level < MAX_LEVELS) {
+                    level++;
+                    initLevel();
+                    state = 'playing';
+                } else {
+                    SND.stopFireworks();
+                    level = 1; enemiesKilled = 0;
+                    globalHasSword = false; globalHasGun = true;
+                    initLevel();
+                    state = 'playing';
+                    SND.init();
+                }
+            }
+        }
+
+        function handleGamepadSystemInput() {
+            if (isControlsScreenOpen()) {
+                if (gamepadInput.confirmPressed || gamepadInput.backPressed || gamepadInput.pausePressed) {
+                    setControlsScreen(false, controlsReturnMode);
+                }
+                return;
+            }
+            if (gamepadInput.pausePressed && state === 'playing') togglePause();
+            if (paused) return;
+            if (gamepadInput.confirmPressed) advanceFromEndScreen();
+        }
+
         // ─── Key: R = restart / next level ───────────────────────────────────────────
         document.addEventListener('keydown', e => {
             if (e.repeat) return;
+            if (isControlsScreenOpen() && (e.code === 'Escape' || e.code === 'Space' || e.code === 'Enter')) {
+                setControlsScreen(false, controlsReturnMode);
+                return;
+            }
             if (e.code === 'Escape' && state === 'playing') {
-                paused = !paused;
-                const ov = document.getElementById('overlay');
-                const startBtn = document.getElementById('startBtn');
-                const menuBtn = document.getElementById('menuBtn');
-                const resumeBtn = document.getElementById('resumeBtn');
-                const difficultyPanel = document.getElementById('difficultyPanel');
-                
-                if (paused) {
-                    SND.pauseMusic();
-                    SND.stopHippo();
-                    ov.style.display = 'flex';
-                    startBtn.style.display = 'none';
-                    difficultyPanel.style.display = 'none';
-                    menuBtn.style.display = 'block';
-                    resumeBtn.style.display = 'block';
-                    menuBtn.innerText = T('backToMenu');
-                    resumeBtn.innerText = T('resumeBtn');
-                } else {
-                    SND.resumeMusic();
-                    ov.style.display = 'none';
-                }
+                togglePause();
             }
             if (paused) return;
             if (e.code === 'Space') {
-                if (state === 'dead') {
-                    suppressSpaceShootUntilKeyup = true;
-                    enemiesKilled = 0;
-                    initLevel(5);
-                    state = 'playing';
-                    SND.stopMusic(); SND.resumeMusic();
-                } else if (state === 'win') {
-                    suppressSpaceShootUntilKeyup = true;
-                    if (level < MAX_LEVELS) {
-                        level++;
-                        initLevel();
-                        state = 'playing';
-                    } else {
-                        SND.stopFireworks();
-                        level = 1; enemiesKilled = 0;
-                        globalHasSword = false; globalHasGun = true;
-                        initLevel();
-                        state = 'playing';
-                        SND.init();
-                    }
-                }
+                advanceFromEndScreen();
             }
         });
 
@@ -4111,12 +4496,17 @@
             SND.stopFireworks();
             SND.stopHippo();
             state = 'menu';
-            document.getElementById('overlay').style.display = 'flex';
+            const overlay = document.getElementById('overlay');
+            overlay.classList.remove('pause-mode');
+            overlay.style.display = 'flex';
             document.getElementById('startBtn').style.display = 'block';
             document.getElementById('difficultyPanel').style.display = 'flex';
             document.getElementById('menuTitle').style.display = 'block';
             document.getElementById('menuBtn').style.display = 'none';
             document.getElementById('resumeBtn').style.display = 'none';
+            document.getElementById('controlsBtn').style.display = 'block';
+            document.getElementById('controlsPanel').style.display = 'none';
+            controlsReturnMode = 'menu';
             if (raf) {
                 cancelAnimationFrame(raf);
                 raf = null;
@@ -4124,6 +4514,10 @@
             // Trigger menu loop
             (function menuLoop() {
                 if (state === 'menu') {
+                    pollGamepad();
+                    if (isControlsScreenOpen()) {
+                        if (gamepadInput.confirmPressed || gamepadInput.backPressed || gamepadInput.pausePressed) setControlsScreen(false, controlsReturnMode);
+                    } else if (gamepadInput.confirmPressed) startGame();
                     drawStarsBg(t++);
                     requestAnimationFrame(menuLoop);
                 }
@@ -4133,16 +4527,27 @@
         // ─── Start button ─────────────────────────────────────────────────────────────
         document.getElementById('resumeBtn').addEventListener('click', () => {
             paused = false;
+            document.getElementById('overlay').classList.remove('pause-mode');
             document.getElementById('overlay').style.display = 'none';
             SND.resumeMusic();
+        });
+
+        document.getElementById('controlsBtn').addEventListener('click', () => {
+            setControlsScreen(true, paused ? 'pause' : 'menu');
+        });
+
+        document.getElementById('controlsBackBtn').addEventListener('click', () => {
+            setControlsScreen(false, controlsReturnMode);
         });
 
         function startGame() {
             if (state !== 'menu') return;
             SND.init();
             SND.stopFireworks();
+            document.getElementById('overlay').classList.remove('pause-mode');
             document.getElementById('overlay').style.display = 'none';
             document.getElementById('difficultyPanel').style.display = 'none';
+            document.getElementById('controlsPanel').style.display = 'none';
             level = 1; enemiesKilled = 0;
             globalHasGun = true;
             initLevel();
@@ -4155,6 +4560,10 @@
         // Start the render loop (even before game starts, for menu animation)
         (function menuLoop() {
             if (state === 'menu') {
+                pollGamepad();
+                if (isControlsScreenOpen()) {
+                    if (gamepadInput.confirmPressed || gamepadInput.backPressed || gamepadInput.pausePressed) setControlsScreen(false, controlsReturnMode);
+                } else if (gamepadInput.confirmPressed) startGame();
                 drawStarsBg(t++);
                 requestAnimationFrame(menuLoop);
             }
