@@ -278,6 +278,7 @@
 
         /* Hebrew Specific Font Adjustments */
         body.lang-he #hud-level-label, 
+        body.lang-he #hud-coins-label,
         body.lang-he #hud-enemies-label {
             font-size: 15px; /* Bigger for Hebrew letters */
         }
@@ -388,6 +389,7 @@
     <div id="hud">
         <span id="hearts">❤️❤️❤️❤️❤️</span>
         <span><span id="hud-level-label">📜 Level </span><b id="levelCount">1</b></span>
+        <span><span id="hud-coins-label">🪙 Coins </span><b id="coinsCount">0</b></span>
         <span><span id="hud-enemies-label">💥 Enemies Killed </span><b id="enemiesCount">0</b></span>
     </div>
 
@@ -496,6 +498,7 @@
                 soundsOff: 'Sounds: Off',
 
                 hudLevel: '📜 Level ',
+                hudCoins: '🪙 Coins ',
                 hudEnemies: '💥 Enemies Killed ',
                 killHint: 'Jump on enemies from above to kill them',
                 bossAppeared: 'Boss appeared!',
@@ -539,6 +542,7 @@
                 soundsOff: 'צלילים: כבוי',
 
                 hudLevel: '📜 שלב ',
+                hudCoins: '🪙 מטבעות ',
                 hudEnemies: '💥 אויבים שחוסלו ',
                 killHint: 'כדי להרוג את המפלצות קפוץ עליהן מלמעלה',
                 bossAppeared: 'הבוס הופיע!',
@@ -605,6 +609,7 @@
             document.getElementById('keyboardControlsText').innerHTML = T('keyboardControlsText');
             document.getElementById('gamepadControlsText').innerHTML = T('gamepadControlsText');
             document.getElementById('hud-level-label').textContent = T('hudLevel');
+            document.getElementById('hud-coins-label').textContent = T('hudCoins');
             document.getElementById('hud-enemies-label').textContent = T('hudEnemies');
             // Show the flag of the OTHER language (clicking switches to it)
             document.getElementById('langBtn').innerHTML = lang === 'en' ? _flagImg(_flagIL) : _flagImg(_flagUS);
@@ -774,7 +779,16 @@
                 if (!sfxEnabled) return;
                 try {
                     const s = new Audio('oink.mp3');
-                    s.volume = 0.45;
+                    s.volume = 0.24;
+                    s.currentTime = 0;
+                    s.play().catch(e => {});
+                } catch(e) {}
+            },
+            ketchup() {
+                if (!sfxEnabled) return;
+                try {
+                    const s = new Audio('ketchup.mp3');
+                    s.volume = 0.4;
                     s.currentTime = 0;
                     s.play().catch(e => {});
                 } catch(e) {}
@@ -783,15 +797,6 @@
                 if (!sfxEnabled) return;
                 try {
                     const s = new Audio('lion roar.mp3');
-                    s.volume = 0.58;
-                    s.currentTime = 0;
-                    s.play().catch(e => {});
-                } catch(e) {}
-            },
-            lionDie() {
-                if (!sfxEnabled) return;
-                try {
-                    const s = new Audio('oy vey.aac');
                     s.volume = 0.58;
                     s.currentTime = 0;
                     s.play().catch(e => {});
@@ -945,6 +950,7 @@
         // ─── Game state ───────────────────────────────────────────────────────────────
         let state = 'menu'; // menu | playing | dead | win
         let level = 1, enemiesKilled = 0;
+        let totalCoinsCollected = 0;
         const MAX_LEVELS = 7;
 
         // ─── Input ────────────────────────────────────────────────────────────────────
@@ -1134,13 +1140,29 @@
                 });
             }
         }
+        function spawnLandingDust(x, y, intensity = 1) {
+            const count = Math.min(14, Math.max(7, Math.round(7 + intensity * 1.4)));
+            for (let i = 0; i < count; i++) {
+                const side = Math.random() < 0.5 ? -1 : 1;
+                particles.push({
+                    x: x + rand(-10, 10),
+                    y: y + rand(-2, 2),
+                    vx: side * rand(0.9, 2.8),
+                    vy: rand(-0.65, -0.08),
+                    life: rand(0.42, 0.68),
+                    color: 'rgba(210,185,120,0.9)',
+                    size: rand(2.6, 5.2),
+                    type: 'landingDust'
+                });
+            }
+        }
         function updateParticles() {
             if (particles.length > 150) particles.splice(0, particles.length - 150);
             particles = particles.filter(p => {
                 p.x += p.vx; p.y += p.vy;
-                p.vy += p.type === 'eggYolk' ? 0.18 : ((p.type === 'feather' || p.type === 'eggShell') ? 0.055 : 0.1);
+                p.vy += p.type === 'landingDust' ? 0.025 : (p.type === 'eggYolk' ? 0.18 : ((p.type === 'feather' || p.type === 'eggShell') ? 0.055 : 0.1));
                 if (p.type === 'feather' || p.type === 'eggShell') p.rot += p.spin || 0;
-                p.life -= p.type === 'feather' ? 0.024 : (p.type === 'eggYolk' ? 0.03 : 0.035);
+                p.life -= p.type === 'landingDust' ? 0.038 : (p.type === 'feather' ? 0.024 : (p.type === 'eggYolk' ? 0.03 : 0.035));
                 return p.life > 0;
             });
         }
@@ -1180,6 +1202,10 @@
                 } else if (p.type === 'eggYolk') {
                     ctx.beginPath();
                     ctx.ellipse(p.x - cam, p.y, p.size * 0.85, p.size * 1.15, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.type === 'landingDust') {
+                    ctx.beginPath();
+                    ctx.ellipse(p.x - cam, p.y, p.size * 1.45, p.size * 0.55, 0, 0, Math.PI * 2);
                     ctx.fill();
                 } else {
                     ctx.beginPath();
@@ -1307,6 +1333,7 @@
                             if (en.hp <= 0) {
                                 en.dead = true;
                                 enemiesKilled++;
+                                if (en.isBig) hideUncollectedCoinsAfterBossDeath();
                                 if (en.isChicken) spawnFeathers(en.x + en.w / 2, en.y + en.h / 2);
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
@@ -1314,7 +1341,6 @@
                                 else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
                                 else if (en.isPig) SND.oink();
                                 else if (en.isBat) SND.batDie();
-                                else if (en.isLion) SND.lionDie();
                                 else if (isPinkMonster(en)) SND.monsterDead();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -2056,15 +2082,22 @@
 
             if (lvl === 6) {
                 // More monkeys
+                const level6MonkeyRuns = platforms.filter(p => p.y === groundY && p.w > 180 && p.x > 520 && p.x < doorX - 760);
                 for (let i = 0; i < 7; i++) {
-                    const ex = rand(600, worldW - 800) | 0;
+                    const p = level6MonkeyRuns.length ? level6MonkeyRuns[i % level6MonkeyRuns.length] : null;
+                    const slotsOnRun = p ? Math.ceil((7 - (i % level6MonkeyRuns.length)) / level6MonkeyRuns.length) : 1;
+                    const slotIndex = p ? Math.floor(i / level6MonkeyRuns.length) : i;
+                    const slotW = p ? p.w / Math.max(1, slotsOnRun) : 220;
+                    const ex = p
+                        ? clamp(p.x + slotW * slotIndex + slotW * 0.5 - 11, p.x + 24, p.x + p.w - 46) | 0
+                        : rand(600, worldW - 800) | 0;
                     enemies.push({
                         x: ex, y: groundY - 36, w: 22, h: 51,
                         vx: (Math.random() < 0.5 ? 1 : -1) * 1.2,
                         vy: 0, onGround: false,
                         isMonkey: true, shootCooldown: rand(60, 240) | 0,
                         hp: 4, maxHp: 4, dead: false,
-                        patrolX0: ex - 200, patrolX1: ex + 200,
+                        patrolX0: p ? p.x + 18 : ex - 200, patrolX1: p ? p.x + p.w - 40 : ex + 200,
                         dir: 1, walkAnim: 0
                     });
                 }
@@ -3367,11 +3400,18 @@
         }
 
         function drawCoin(c, cam, t) {
-            if (c.collected) return;
+            if (c.collected || c.hiddenAfterBoss) return;
             const x = c.x - cam, y = c.y + Math.sin(t * 0.06 + (c.bob || 0)) * 4;
             ctx.save();
             drawCoinShape(x, y, 9, t * 0.08 + x * 0.03);
             ctx.restore();
+        }
+
+        function hideUncollectedCoinsAfterBossDeath(coins = ld && ld.coins) {
+            if (!coins) return;
+            for (const coin of coins) {
+                if (!coin.collected) coin.hiddenAfterBoss = true;
+            }
         }
 
         function drawHeart(h, cam, t) {
@@ -3522,6 +3562,16 @@
             document.getElementById('hearts').textContent = hearts;
 
             document.getElementById('levelCount').textContent = level;
+            let displayedCoins = totalCoinsCollected;
+            if (coinScoreCountDown) {
+                coinScoreCountDown.frame++;
+                displayedCoins = Math.max(
+                    coinScoreCountDown.to,
+                    coinScoreCountDown.from - Math.floor(coinScoreCountDown.frame / coinScoreCountDown.framesPerStep)
+                );
+                if (displayedCoins <= coinScoreCountDown.to) coinScoreCountDown = null;
+            }
+            document.getElementById('coinsCount').textContent = displayedCoins;
             document.getElementById('enemiesCount').textContent = enemiesKilled;
         }
 
@@ -3532,6 +3582,7 @@
         let levelIntroTimer = 0;
         let levelIntroLines = [];
         let coinNeedCountUp = null;
+        let coinScoreCountDown = null;
 
         function cloneEnemyState(en) {
             return { ...en };
@@ -3567,6 +3618,7 @@
             floatingTexts = [];
             bullets = [];
             coinNeedCountUp = null;
+            coinScoreCountDown = null;
             if (level === 7) {
                 levelIntroTimer = -1;
                 levelIntroLines = T('level7Intro');
@@ -3661,7 +3713,13 @@
                             state = 'dead';
                         } else {
                             const previousCoinsLeft = pl.eatenCoinsLeft;
-                            ld.coins.forEach(coin => { coin.collected = false; });
+                            const resetCoinsCollected = ld.coins.filter(coin => coin.collected).length;
+                            const scoreBeforeHippoReset = totalCoinsCollected;
+                            totalCoinsCollected = Math.max(0, totalCoinsCollected - resetCoinsCollected);
+                            coinScoreCountDown = resetCoinsCollected > 0
+                                ? { from: scoreBeforeHippoReset, to: totalCoinsCollected, frame: 0, framesPerStep: 3 }
+                                : null;
+                            ld.coins.forEach(coin => { coin.collected = false; coin.hiddenAfterBoss = false; });
                             resetEnemiesToLevelStart();
                             bullets = [];
                             pl.hp = restartHP;
@@ -3818,11 +3876,16 @@
                 } else {
                     pl.vy = Math.min(pl.vy + 0.55, 16);
                 }
+                const wasOnGround = pl.onGround;
+                const landingVy = pl.vy;
                 pl.x += pl.vx;
                 pl.y += pl.vy;
                 pl.x = clamp(pl.x, 0, worldW - pl.w);
                 if (!pl.enteringDoor) {
                     resolveVsplatforms(pl, platforms);
+                }
+                if (!wasOnGround && pl.onGround && landingVy > 2.2 && !pl.enteringDoor && pl.standingPlatform && pl.standingPlatform.y === ld.groundY) {
+                    spawnLandingDust(pl.x + pl.w / 2, pl.y + pl.h - 1, landingVy);
                 }
                 if (pl.onGround && !pl.enteringDoor) {
                     pl.lastOnGroundX = pl.x;
@@ -3987,6 +4050,7 @@
                                 const playerBelow = pl.y > en.y + en.h * 0.4;
                                 if (playerBelow && Math.abs(plMid - pigMid) < (en.isBig ? 240 : 160)) {
                                     spawnEnemyBullet(en, '#c21807', plMid, pl.y);
+                                    SND.ketchup();
                                     en.shootCooldown = enemyShootDelay(en.isBig ? 55 : 85);
                                 }
                             }
@@ -4032,7 +4096,7 @@
                                 en.roarTimer = 88;
                                 en.roarShotTimer = 16;
                                 SND.lionRoar();
-                                en.roarCooldown = enemyShootDelay(115);
+                                en.roarCooldown = enemyShootDelay(155);
                             }
                         }
                         if (!en.dead) {
@@ -4092,6 +4156,7 @@
                             en.hp -= 1;
                             if (en.hp <= 0) {
                                 en.dead = true; enemiesKilled++;
+                                if (en.isBig) hideUncollectedCoinsAfterBossDeath(coinsArr);
                                 if (en.isChicken) spawnFeathers(en.x + en.w / 2, en.y + en.h / 2);
                                 else if (isPinkMonster(en)) spawnMonsterOops(en);
                                 else spawnParticles(en.x + en.w / 2, en.y, '#ff8800', 14);
@@ -4099,7 +4164,6 @@
                                 else if (en.isMonkey) SND.monkeyDie(en.isBig ? 0.05 : 0.2);
                                 else if (en.isPig) SND.oink();
                                 else if (en.isBat) SND.batDie();
-                                else if (en.isLion) SND.lionDie();
                                 else if (isPinkMonster(en)) SND.monsterDead();
                                 else if (en.isBig) SND.bossDie();
                                 else SND.kill();
@@ -4119,8 +4183,8 @@
                     if (pl.hp <= 0) { pl.dead = true; state = 'dead'; }
                 }
 
-                for (const c of coinsArr) if (!c.collected && isOverlap(pl, { x: c.x - 8, y: c.y - 8, w: 16, h: 16 })) {
-                    c.collected = true; spawnParticles(c.x, c.y, '#ffe066', 5); spawnFloatingText(c.x, c.y - 10, '+1'); SND.coin();
+                for (const c of coinsArr) if (!c.collected && !c.hiddenAfterBoss && isOverlap(pl, { x: c.x - 8, y: c.y - 8, w: 16, h: 16 })) {
+                    c.collected = true; totalCoinsCollected++; coinScoreCountDown = null; spawnParticles(c.x, c.y, '#ffe066', 5); spawnFloatingText(c.x, c.y - 10, '+1'); SND.coin();
                 }
                 for (const h of hearts) if (!h.collected && isOverlap(pl, { x: h.x - 8, y: h.y - 8, w: 16, h: 16 })) {
                     h.collected = true; if (pl.hp < pl.maxHp) pl.hp++; spawnParticles(h.x, h.y, '#ff4466', 10); spawnFloatingText(h.x, h.y - 10, '+1'); SND.heart();
@@ -4142,6 +4206,7 @@
                     }
 
                 const bossDead = enemies.every(e => e.isHippo || !e.isBig || e.dead), doorNeeded = levelItemRequirement(level, totalItemsRaw);
+                if (enemies.some(e => !e.isHippo && e.isBig && e.dead)) hideUncollectedCoinsAfterBossDeath(coinsArr);
                 door.open = (collectedItemsRaw >= doorNeeded) && bossDead;
 
                 const doorEntryZone = door.finalDoor
@@ -4441,6 +4506,7 @@
             if (state === 'dead') {
                 suppressSpaceShootUntilKeyup = true;
                 enemiesKilled = 0;
+                totalCoinsCollected = 0;
                 initLevel(5);
                 state = 'playing';
                 SND.stopMusic(); SND.resumeMusic();
@@ -4452,7 +4518,7 @@
                     state = 'playing';
                 } else {
                     SND.stopFireworks();
-                    level = 1; enemiesKilled = 0;
+                    level = 1; enemiesKilled = 0; totalCoinsCollected = 0;
                     globalHasSword = false; globalHasGun = true;
                     initLevel();
                     state = 'playing';
@@ -4549,6 +4615,7 @@
             document.getElementById('difficultyPanel').style.display = 'none';
             document.getElementById('controlsPanel').style.display = 'none';
             level = 1; enemiesKilled = 0;
+            totalCoinsCollected = 0;
             globalHasGun = true;
             initLevel();
             state = 'playing';
